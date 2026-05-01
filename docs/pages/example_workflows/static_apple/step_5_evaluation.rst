@@ -62,7 +62,7 @@ Test the policy in a single environment with visualization via the GUI run:
      galileo_g1_static_pick_and_place \
      --object apple_01_objaverse_robolab \
      --destination clay_plates_hot3d_robolab \
-     --embodiment g1_wbc_joint
+     --embodiment g1_wbc_agile_joint
 
 Note the lower ``--num_steps`` (600 instead of 1500): with no walking phase, a successful
 static apple-to-plate episode runs for roughly half as long as the loco-manip variant.
@@ -102,7 +102,7 @@ Parallel evaluation of the policy in multiple parallel environments is also supp
            galileo_g1_static_pick_and_place \
            --object apple_01_objaverse_robolab \
            --destination clay_plates_hot3d_robolab \
-           --embodiment g1_wbc_joint
+           --embodiment g1_wbc_agile_joint
 
    .. tab-item:: Distribute Multi-GPU Evaluation
 
@@ -123,7 +123,7 @@ Parallel evaluation of the policy in multiple parallel environments is also supp
            galileo_g1_static_pick_and_place \
            --object apple_01_objaverse_robolab \
            --destination clay_plates_hot3d_robolab \
-           --embodiment g1_wbc_joint
+           --embodiment g1_wbc_agile_joint
 
 
 And during the evaluation, you should see the following output on the console at the end of the evaluation
@@ -145,12 +145,14 @@ and the number of episodes is more than the single environment evaluation becaus
 
 .. note::
 
-   Note that the embodiment used in closed-loop policy inference is ``g1_wbc_joint``, which is different
-   from ``g1_wbc_pink`` used in data generation.
+   Note that the embodiment used in closed-loop policy inference is ``g1_wbc_agile_joint``, which is
+   different from ``g1_wbc_agile_pink`` used in data generation.
    This is because during tele-operation, the upper body is controlled via target end-effector poses,
-   which are realized by using the PINK IK controller, and the lower body is controlled via a WBC policy.
-   GR00T N1.6 policy is trained on upper body joint positions and lower body WBC policy inputs, so we use
-   ``g1_wbc_joint`` for closed-loop policy inference.
+   which are realized by using the PINK IK controller, and the lower body is controlled via the AGILE
+   WBC policy. GR00T N1.6 policy is trained on upper body joint positions and lower body WBC policy
+   inputs, so we use the joint-control twin (``g1_wbc_agile_joint``) for closed-loop policy inference
+   -- it shares the AGILE lower-body backend with the data-generation embodiment, just bypasses
+   PinkIK.
 
 .. note::
 

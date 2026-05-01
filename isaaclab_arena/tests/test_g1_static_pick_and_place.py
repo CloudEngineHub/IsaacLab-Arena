@@ -5,11 +5,13 @@
 
 """Smoke tests for ``galileo_g1_static_pick_and_place`` (WBC-balanced G1, no nav).
 
-Mirrors ``test_g1_locomanip_apple_to_plate.py`` (same ``g1_wbc_pink`` embodiment, same
-23-D action layout, same standing-pose hold actions during warmup) and adds Mimic-config
-tests specific to the static variant: the body subtask group must be collapsed to a single
-no-op (not the locomanip's 4-phase nav sequence), and the datagen name must use the
-``static_*`` prefix.
+Mirrors ``test_g1_locomanip_apple_to_plate.py`` (same 23-D action layout, same
+standing-pose hold actions during warmup) but uses the AGILE WBC backend
+(``G1WBCAgileJointEmbodiment``) -- production env defaults to ``g1_wbc_agile_pink``,
+so the joint twin keeps the test honest to the deployed stack while still skipping the
+PinkIK forward solve for speed. Adds Mimic-config tests specific to the static variant:
+the body subtask group must be collapsed to a single no-op (not the locomanip's 4-phase
+nav sequence), and the datagen name must use the ``static_*`` prefix.
 """
 
 import torch
@@ -43,14 +45,14 @@ def get_test_environment(num_envs: int):
 
     Uses a plain ``table`` background (instead of the production ``galileo_locomanip``
     scene) to isolate task-termination logic and keep the test fast. Mirrors the locomanip
-    test's structure -- same ``g1_wbc_pink`` embodiment, same standing-action pattern,
-    same termination semantics -- so test failures here can be cleanly attributed to the
-    static-task / static-Mimic plumbing rather than the WBC stack itself.
+    test's structure -- same standing-action pattern, same termination semantics -- so
+    test failures here can be cleanly attributed to the static-task / static-Mimic
+    plumbing rather than the WBC stack itself.
     """
 
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
-    from isaaclab_arena.embodiments.g1.g1 import G1WBCJointEmbodiment
+    from isaaclab_arena.embodiments.g1.g1 import G1WBCAgileJointEmbodiment
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
@@ -65,12 +67,14 @@ def get_test_environment(num_envs: int):
     apple.set_initial_pose(Pose(position_xyz=APPLE_INITIAL_POSITION_M, rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
     plate.set_initial_pose(Pose(position_xyz=PLATE_INITIAL_POSITION_M, rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
 
-    # Use the joint-control WBC variant in tests (mirrors test_g1_locomanip_apple_to_plate)
-    # to skip the PinkIK forward solve on every step -- the test exercises task termination
-    # semantics, not the IK stack. Production env still defaults to ``g1_wbc_pink``; the
-    # zero-norm wrist quat bootstrapping issue that previously forced this swap is fixed
-    # in ``g1_decoupled_wbc_pink_action._identity_if_zero_norm_xyzw``.
-    embodiment = G1WBCJointEmbodiment(enable_cameras=ENABLE_CAMERAS)
+    # Use the joint-control AGILE WBC variant in tests: the production env defaults to
+    # ``g1_wbc_agile_pink`` (AGILE end-to-end velocity policy + PinkIK upper body), so
+    # the joint twin matches the deployed WBC backend while skipping the PinkIK forward
+    # solve on every step -- this test exercises task termination semantics, not the IK
+    # stack. The zero-norm wrist quat bootstrapping fix in
+    # ``g1_decoupled_wbc_pink_action._identity_if_zero_norm_xyzw`` makes the pink variant
+    # safe to use here too, but the joint variant remains a deliberate speed optimization.
+    embodiment = G1WBCAgileJointEmbodiment(enable_cameras=ENABLE_CAMERAS)
     embodiment.set_initial_pose(Pose(position_xyz=(-0.4, 0.0, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
 
     scene = Scene(assets=[background, apple, plate])
@@ -106,8 +110,10 @@ def _step_with_standing_actions(env, num_steps: int) -> list[bool]:
 
     Mirrors the locomanip test: zero actions everywhere except the hip-height channel
     (``actions[:, -4] = 0.75``), which tells WBC to hold standing height instead of
-    interpreting the zero as "squat to floor". Identical action layout to locomanip
-    because we use the same ``g1_wbc_pink`` embodiment.
+    interpreting the zero as "squat to floor". Identical action layout to the locomanip
+    env because both pink variants and both joint variants share the same 23-D
+    ``G1DecoupledWBCJointActionCfg`` -- only the lower-body ONNX backend (HOMIE vs AGILE)
+    differs, and that does not change the action vector layout.
     """
     terminated_list = []
     for _ in range(num_steps):

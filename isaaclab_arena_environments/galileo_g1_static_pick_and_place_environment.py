@@ -6,8 +6,12 @@
 """Static-base G1 pick-and-place environment (WBC stands the robot in place; no nav).
 
 This is a same-shelf-only variant of ``galileo_g1_locomanip_pick_and_place``: same
-``galileo_locomanip`` background, same ``g1_wbc_pink`` embodiment, same OpenXR retargeter,
-same 23-D action layout. The only differences are:
+``galileo_locomanip`` background, same OpenXR retargeter, same 23-D action layout. The
+default embodiment is ``g1_wbc_agile_pink`` (AGILE end-to-end velocity policy) instead of
+``g1_wbc_pink`` (HOMIE stand+walk pair) -- the static task never walks, so the AGILE
+single-policy backend is a better fit than HOMIE's stand/walk model split. The
+``g1_wbc_pink`` embodiment is still accepted via ``--embodiment`` for users who want
+HOMIE behaviour. The other differences from the locomanip env are:
 
 1. The destination plate sits on the *same* shelf as the apple (within arm's reach), so
    the robot never needs to drive its base anywhere -- WBC just holds the standing pose.
@@ -138,8 +142,13 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
         # ``obs_buf["action"]`` into every Mimic-generated dataset. Without it, datasets
         # produced from this env would silently lack the ``"action"`` key and break the
         # shared converter / training pipeline.
+        #
+        # Accept both pink variants here so the recorder fires for either WBC backend
+        # (AGILE end-to-end velocity policy by default; HOMIE stand+walk if the user
+        # passes ``--embodiment g1_wbc_pink``). Both share the same 23-D action layout
+        # and the same OpenXR retargeter pipeline, so the recorded dataset is identical.
         if (
-            args_cli.embodiment == "g1_wbc_pink"
+            args_cli.embodiment in ("g1_wbc_pink", "g1_wbc_agile_pink")
             and hasattr(args_cli, "mimic")
             and args_cli.mimic
             and not hasattr(args_cli, "auto")
@@ -180,10 +189,14 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
     def add_cli_args(parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--object", type=str, default=TUNED_PICK_UP_OBJECT_NAME)
         parser.add_argument("--destination", type=str, default=TUNED_DESTINATION_NAME)
-        # Default embodiment is g1_wbc_pink: WBC controller balances the robot in place,
-        # PinkIK drives the upper body. Identical action layout to the locomanip env (23-D)
-        # so the same OpenXR retargeter / Mimic env / converters apply unchanged.
-        parser.add_argument("--embodiment", type=str, default="g1_wbc_pink")
+        # Default embodiment is g1_wbc_agile_pink: AGILE end-to-end velocity policy for
+        # whole-body balance + PinkIK upper body. The static task never walks, so AGILE's
+        # single-policy backend is a better fit than HOMIE's stand+walk split (which
+        # ``g1_wbc_pink`` ships). Same 23-D action layout, same OpenXR retargeter and
+        # Mimic plumbing as the locomanip env -- the only knob that flips is which
+        # lower-body ONNX policy gets loaded by the WBC factory. ``g1_wbc_pink`` is still
+        # accepted as an override for users who specifically want HOMIE.
+        parser.add_argument("--embodiment", type=str, default="g1_wbc_agile_pink")
         parser.add_argument("--teleop_device", type=str, default=None)
         parser.add_argument(
             "--task_description",

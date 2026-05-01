@@ -65,7 +65,7 @@ Generate the dataset:
      galileo_g1_static_pick_and_place \
      --object apple_01_objaverse_robolab \
      --destination clay_plates_hot3d_robolab \
-     --embodiment g1_wbc_pink
+     --embodiment g1_wbc_agile_pink
 
 Data generation takes 1-4 hours depending on your CPU/GPU.
 You can remove ``--headless`` and add ``--viz kit``
@@ -97,7 +97,7 @@ To visualize the data produced, you can replay the dataset using the following c
      galileo_g1_static_pick_and_place \
      --object apple_01_objaverse_robolab \
      --destination clay_plates_hot3d_robolab \
-     --embodiment g1_wbc_pink
+     --embodiment g1_wbc_agile_pink
 
 You should see the robot successfully perform the task.
 

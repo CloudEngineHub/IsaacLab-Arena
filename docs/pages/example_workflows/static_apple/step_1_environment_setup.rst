@@ -14,10 +14,15 @@ Environment Description
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 The static apple-to-plate workflow ships its own ``GalileoG1StaticPickAndPlaceEnvironment`` registered
-under ``galileo_g1_static_pick_and_place``. It reuses the same ``galileo_locomanip`` background USD,
-the same ``g1_wbc_pink`` embodiment, and the same OpenXR retargeter as the loco-manipulation
-apple-to-plate environment, but places both the apple and the destination plate on the *same* shelf
-so the robot never needs to drive its base anywhere — WBC just holds the standing pose.
+under ``galileo_g1_static_pick_and_place``. It reuses the same ``galileo_locomanip`` background USD
+and the same OpenXR retargeter as the loco-manipulation apple-to-plate environment, but defaults to
+the ``g1_wbc_agile_pink`` embodiment (AGILE end-to-end velocity policy) instead of ``g1_wbc_pink``
+(HOMIE stand+walk pair). The static task never walks, so AGILE's single-policy backend is a better
+fit than HOMIE's stand/walk model split — both share the same 23-D action layout and OpenXR
+retargeter pipeline, so only the lower-body ONNX backend changes. Both the apple and the destination
+plate are placed on the *same* shelf so the robot never needs to drive its base anywhere — WBC just
+holds the standing pose. The ``g1_wbc_pink`` embodiment is still accepted as an override for users
+who specifically want HOMIE.
 
 .. dropdown:: The Galileo G1 Static Pick-and-Place Environment
    :animate: fade-in
@@ -81,9 +86,12 @@ so the robot never needs to drive its base anywhere — WBC just holds the stand
                # When --mimic is active, register patch_recorders() so the dataset
                # writes obs_buf["action"] under the "action" key. We deliberately skip
                # patch_generate() (the locomanip-specific nav-aware DataGenerator); the
-               # static env never navigates so the default generate is correct.
+               # static env never navigates so the default generate is correct. Both
+               # pink variants are accepted so the recorder fires for either WBC
+               # backend (AGILE end-to-end velocity policy by default; HOMIE if the
+               # user passes --embodiment g1_wbc_pink).
                if (
-                   args_cli.embodiment == "g1_wbc_pink"
+                   args_cli.embodiment in ("g1_wbc_pink", "g1_wbc_agile_pink")
                    and getattr(args_cli, "mimic", False)
                    and not hasattr(args_cli, "auto")
                ):
@@ -120,11 +128,14 @@ Step-by-Step Breakdown
         enable_cameras=args_cli.enable_cameras
     )
 
-The static workflow shares the ``galileo_locomanip`` background and the ``g1_wbc_pink`` embodiment
-with the loco-manipulation variant on purpose: the lighting, shelf geometry and 23-D action layout
-are already tuned, so the only thing that changes is *where* the destination sits. ``teleop_device``
-is left as ``None`` when ``--teleop_device`` is not supplied so that scripts like ``replay_demos.py``
-and ``policy_runner.py`` can launch the same environment without instantiating an XR runtime.
+The static workflow shares the ``galileo_locomanip`` background with the loco-manipulation variant
+on purpose: the lighting, shelf geometry and 23-D action layout are already tuned, so the only
+thing that changes is *where* the destination sits and which lower-body WBC backend balances the
+robot. The default ``g1_wbc_agile_pink`` embodiment swaps HOMIE's stand+walk pair for AGILE's
+single end-to-end velocity policy, which is a better fit for a no-nav task; ``g1_wbc_pink`` is
+accepted as an override for users who want HOMIE behaviour. ``teleop_device`` is left as ``None``
+when ``--teleop_device`` is not supplied so that scripts like ``replay_demos.py`` and
+``policy_runner.py`` can launch the same environment without instantiating an XR runtime.
 
 
 **2. Position the Objects**
@@ -187,7 +198,7 @@ See :doc:`../../concepts/task/index` for task creation details.
 .. code-block:: python
 
    if (
-       args_cli.embodiment == "g1_wbc_pink"
+       args_cli.embodiment in ("g1_wbc_pink", "g1_wbc_agile_pink")
        and getattr(args_cli, "mimic", False)
        and not hasattr(args_cli, "auto")
    ):
@@ -195,10 +206,11 @@ See :doc:`../../concepts/task/index` for task creation details.
        patch_recorders()
 
 When ``--mimic`` is active we register ``PostStepFlatPolicyObservationsRecorder`` so generated
-datasets contain the ``"action"`` observation key the converter / training pipeline expects. Unlike
-the loco-manip env, we do **not** call ``patch_g1_locomanip_mimic()`` — that helper *also* swaps in
-a navigation-aware ``DataGenerator.generate``, which would fight against the standing-only WBC
-behaviour we want here.
+datasets contain the ``"action"`` observation key the converter / training pipeline expects. The
+gate accepts both pink variants (``g1_wbc_agile_pink`` by default; ``g1_wbc_pink`` as a HOMIE
+override) so the recorder fires for either WBC backend. Unlike the loco-manip env, we do **not**
+call ``patch_g1_locomanip_mimic()`` — that helper *also* swaps in a navigation-aware
+``DataGenerator.generate``, which would fight against the standing-only WBC behaviour we want here.
 
 
 **6. Create the IsaacLab Arena Environment**
