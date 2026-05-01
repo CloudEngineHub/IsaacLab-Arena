@@ -29,6 +29,31 @@ if TYPE_CHECKING:
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
 
+# Pose tuning constants (all values empirically validated -- see commit history for the
+# manual procedure: spawn the destination plate at the locomanip apple z (0.0707) and
+# read the final z after gravity-settle; spawn the apple and read its USD AABB):
+#
+# - SHELF_SURFACE_Z: measured by gravity-settling the plate (whose USD origin sits at
+#   its bottom, i.e. BBox min_z = 0); the settled z = -0.030 in env-local frame is the
+#   actual shelf-top z in the galileo_locomanip scene.
+# - APPLE_USD_ORIGIN_ABOVE_BOTTOM: measured from apple_01.usd (BBox min_z = -0.019,
+#   max_z = 0.049). Add this offset to apple_z so the apple's bottom -- not its USD
+#   origin -- lands on the shelf surface.
+# - SHELF_AIRGAP: keeps PhysX from spawning objects in collider penetration with the
+#   shelf on the first sim tick (which would otherwise launch them upward).
+SHELF_SURFACE_Z = -0.030
+APPLE_USD_ORIGIN_ABOVE_BOTTOM = 0.019
+SHELF_AIRGAP = 0.005
+
+# Object XY spawn pose (env-local frame, shelf-relative). X mirrors the locomanip env
+# (the only on-shelf X we have ground-truth data for via the brown_box flow). The pickup
+# Y also mirrors locomanip (Y=0.18); the destination is offset -0.24 m in Y so the
+# plate's 30 cm footprint clears the apple without collision. Earlier we tried Y=0.30
+# for the apple but a smoke test showed it rolls off the shelf edge from there.
+PICK_UP_OBJECT_SPAWN_XY = (0.5785, 0.18)
+DESTINATION_SPAWN_XY = (0.5785, -0.06)
+
+
 @register_environment
 class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
     """G1 (WBC-balanced, no nav) pick-and-place on the locomanip warehouse shelf.
@@ -57,47 +82,46 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
         else:
             teleop_device = None
 
-        # Pose tuning notes (all values empirically validated -- see
-        # ``scripts/measure_static_shelf.py`` style smoke tests):
-        #
-        #   - Robot pose mirrors the locomanip env exactly so the WBC controller stands
-        #     the robot up in the same shelf-relative spot. The controller dynamically
-        #     lifts the pelvis to ~z=0.74 at runtime; init_state.pos.z=0 is correct.
-        #
-        #   - SHELF_SURFACE_Z is measured: spawned a plate at z=0.0707 (locomanip's apple
-        #     z) and let it gravity-settle; final z was -0.030 in the env-local frame.
-        #     Since the plate's USD origin sits at the plate's bottom (BBox min_z = 0),
-        #     -0.030 is the actual shelf-top z in this scene.
-        #
-        #   - APPLE_USD_ORIGIN_ABOVE_BOTTOM is measured from apple_01.usd (BBox min_z =
-        #     -0.019, max_z = 0.049). Because the apple's USD origin is 1.9 cm above its
-        #     bottom, we add this offset to apple_z so its bottom -- not its USD origin --
-        #     lands on the shelf. Otherwise the apple would sit 1.9 cm lower than the plate.
-        #
-        #   - Apple Y mirrors the locomanip env (Y=0.18) -- the only on-shelf XY point we
-        #     have ground-truth data for via the brown_box flow. The plate is offset 24 cm
-        #     in -Y so its 30-cm-wide footprint clears the apple without collision.
-        #     Earlier we tried Y=0.30 for the apple, but the smoke test showed it rolls off
-        #     the shelf edge from there (settled at z=-0.135, not on the shelf surface).
-        #
-        #   - SHELF_AIRGAP keeps PhysX from spawning objects in collider penetration with
-        #     the shelf on the first sim tick (which would otherwise launch them upward).
-        SHELF_SURFACE_Z = -0.030
-        APPLE_USD_ORIGIN_ABOVE_BOTTOM = 0.019
-        SHELF_AIRGAP = 0.005
+        # Robot pose mirrors the locomanip env exactly so the WBC controller stands the
+        # robot up in the same shelf-relative spot. The controller dynamically lifts the
+        # pelvis to ~z=0.74 at runtime; init_state.pos.z=0 is correct.
         embodiment.set_initial_pose(Pose(position_xyz=(0.0, 0.18, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
+        pick_up_object_x, pick_up_object_y = PICK_UP_OBJECT_SPAWN_XY
+        destination_x, destination_y = DESTINATION_SPAWN_XY
         pick_up_object.set_initial_pose(
             Pose(
-                position_xyz=(0.5785, 0.18, SHELF_SURFACE_Z + APPLE_USD_ORIGIN_ABOVE_BOTTOM + SHELF_AIRGAP),
+                position_xyz=(
+                    pick_up_object_x,
+                    pick_up_object_y,
+                    SHELF_SURFACE_Z + APPLE_USD_ORIGIN_ABOVE_BOTTOM + SHELF_AIRGAP,
+                ),
                 rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
             )
         )
         destination.set_initial_pose(
             Pose(
-                position_xyz=(0.5785, -0.06, SHELF_SURFACE_Z + SHELF_AIRGAP),
+                position_xyz=(destination_x, destination_y, SHELF_SURFACE_Z + SHELF_AIRGAP),
                 rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
             )
         )
+
+        # We deliberately skip ``patch_g1_locomanip_mimic()`` (which wraps both nav-aware
+        # ``DataGenerator.generate`` and recorder patching): WBC is here only to hold the
+        # standing pose, so the locomanip-specific generate/navigation P-controller would
+        # just fight the user's intent. We *do* need ``patch_recorders()`` though -- it
+        # registers ``PostStepFlatPolicyObservationsRecorder``, which writes
+        # ``obs_buf["action"]`` into every Mimic-generated dataset. Without it, datasets
+        # produced from this env would silently lack the ``"action"`` key and break the
+        # shared converter / training pipeline.
+        if (
+            args_cli.embodiment == "g1_wbc_pink"
+            and hasattr(args_cli, "mimic")
+            and args_cli.mimic
+            and not hasattr(args_cli, "auto")
+        ):
+            from isaaclab_arena.utils.locomanip_mimic_patch import patch_recorders
+
+            patch_recorders()
 
         if args_cli.task_description is not None:
             task_description = args_cli.task_description
@@ -108,13 +132,6 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
                 f"Pick up the {object_label} from the shelf and place it onto the "
                 f"{destination_label} on the same shelf next to it."
             )
-
-        # NOTE: unlike galileo_g1_locomanip_pick_and_place, we never inject
-        # ``navigation_subgoals`` into the embodiment's action cfg, even when --mimic is
-        # passed: WBC is here only to hold the standing pose, so the nav P-controller
-        # would just fight the user's intent. The locomotion command stays at zero (no
-        # thumbstick input from the user during teleop, no body action emission from
-        # Mimic since StaticPickAndPlaceMimicEnvCfg uses a single no-op body subtask).
 
         scene = Scene(assets=[background, pick_up_object, destination])
         return IsaacLabArenaEnvironment(

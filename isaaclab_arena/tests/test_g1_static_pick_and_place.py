@@ -74,13 +74,10 @@ def get_test_environment(num_envs: int):
     embodiment.set_initial_pose(Pose(position_xyz=(-0.4, 0.0, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
 
     scene = Scene(assets=[background, apple, plate])
-    # Use ``StaticPickAndPlaceTask`` with the parent's *default* termination thresholds
-    # (force=1.0, velocity=0.1) instead of the production env's tightened pair (0.5, 0.1):
-    # the apple-on-plate test re-teleports the apple every env step, which keeps velocity
-    # at ~0.196 m/s (4 physics substeps of free fall) -- well above the velocity threshold.
-    # The locomanip equivalent test relies on the looser default force threshold to fire
-    # success during a brief contact spike, so we mirror that here. Production env keeps
-    # the tighter thresholds because real teleop trajectories settle the apple cleanly.
+    # Use ``StaticPickAndPlaceTask`` with parent ``PickAndPlaceTask`` default termination
+    # thresholds: this test exercises termination semantics, not threshold tuning. The
+    # production env keeps the locomanip-tightened pair (0.5, 0.1) for comparable metrics;
+    # any drift in the parent defaults is caught by the parent's own tests.
     task = StaticPickAndPlaceTask(
         pick_up_object=apple,
         destination_location=plate,
@@ -115,11 +112,21 @@ def _step_with_standing_actions(env, num_steps: int) -> list[bool]:
     terminated_list = []
     for _ in range(num_steps):
         with torch.inference_mode():
-            actions = torch.zeros(env.action_space.shape, device=env.unwrapped.device)
+            actions = _zero_actions(env)
             actions[:, -4] = 0.75
             _, _, terminated, _, _ = env.step(actions)
             terminated_list.append(terminated.item())
     return terminated_list
+
+
+def _zero_actions(env) -> torch.Tensor:
+    """Return a ``(num_envs, action_dim)``-shaped zero action tensor on the env's device.
+
+    Uses ``single_action_space.shape`` instead of ``action_space.shape`` so the result
+    has the correct rank regardless of how the wrapper exposes the vectorized action
+    space (some wrappers prepend the batch dim, some don't).
+    """
+    return torch.zeros((env.unwrapped.num_envs,) + env.unwrapped.single_action_space.shape, device=env.unwrapped.device)
 
 
 def _teleport_apple(env, apple, position_xyz: tuple[float, float, float]) -> None:
@@ -157,12 +164,8 @@ def _test_initial_state_not_terminated(simulation_app) -> bool:
 def _test_apple_on_plate_succeeds(simulation_app) -> bool:
     """Teleporting the apple just above the plate once should trigger success termination as it settles.
 
-    Note: the locomanip test currently uses a "re-teleport every step" pattern, which keeps
-    the apple's velocity above the velocity_threshold (each step it free-falls for one
-    decimation interval) and is flaky -- the success termination relies on a brief,
-    coincidental low-velocity moment during the post-teleport bounce. We use a
-    "teleport once + let it settle" pattern instead: the apple falls a small distance under
-    gravity, rests on the plate, and the contact force + low velocity reliably trigger the
+    Single-teleport + settle pattern: the apple falls a small distance under gravity,
+    rests on the plate, and the contact force + low velocity reliably trigger the
     termination within ``APPLE_SETTLE_STEPS``.
     """
 
@@ -176,7 +179,9 @@ def _test_apple_on_plate_succeeds(simulation_app) -> bool:
         plate_object: RigidObject = env.unwrapped.scene[plate.name]
         plate_pos_world = wp.to_torch(plate_object.data.root_pos_w)[0]
         env_origin = env.unwrapped.scene.env_origins[0]
-        plate_pos_local = plate_pos_world - env_origin
+        # ``wp.to_torch`` may return a tensor on a different device than ``env_origins``
+        # (warp-managed vs torch-managed); explicitly align before subtracting.
+        plate_pos_local = plate_pos_world.to(env_origin.device) - env_origin
         apple_target = (
             float(plate_pos_local[0]),
             float(plate_pos_local[1]),

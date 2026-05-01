@@ -25,8 +25,10 @@ class StaticPickAndPlaceTask(LocomanipPickAndPlaceTask):
 
     def get_mimic_env_cfg(self, arm_mode: ArmMode):
         # The G1 WBC Pink action layout is dual-arm by construction; single-arm flows
-        # would require a separate embodiment.
-        assert arm_mode == ArmMode.DUAL_ARM, "Static pick and place task only supports dual arm mode"
+        # would require a separate embodiment. Use ValueError (not assert) since this
+        # is API-contract validation that must hold under ``python -O`` too.
+        if arm_mode != ArmMode.DUAL_ARM:
+            raise ValueError(f"Static pick and place task only supports dual arm mode; got {arm_mode}")
         return StaticPickAndPlaceMimicEnvCfg(
             pick_up_object_name=self.pick_up_object.name,
             destination_name=self.destination_location.name,
@@ -61,6 +63,11 @@ class StaticPickAndPlaceMimicEnvCfg(LocomanipPickAndPlaceMimicEnvCfg):
         # Replace the locomanip's 4-step nav body subtask sequence with a single no-op.
         # Common knobs match the locomanip body subtasks (action_noise=0, no interpolation)
         # so the body channel is never perturbed during data generation.
+        #
+        # ``object_ref`` is kept set to the pickup object purely to satisfy the
+        # ``SubTaskConfig`` field contract -- the ``nearest_neighbor_object`` selection
+        # strategy is never exercised here because there is only one body subtask, so
+        # subtask selection is a no-op for the body group.
         self.subtask_configs["body"] = [
             SubTaskConfig(
                 object_ref=self.pick_up_object_name,
