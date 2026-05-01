@@ -14,7 +14,7 @@ We encourage the community to build and publish benchmarks on Isaac Lab-Arena. T
    elsewhere, cite both your benchmark (by name, with a link to your repository) and Isaac Lab-Arena
    as the underlying evaluation framework.
 
-   If you use Isaac Lab-Arena in your research, please cite:
+   You can cite Isaac Lab-Arena as follows:
 
    .. code-block:: bibtex
 
