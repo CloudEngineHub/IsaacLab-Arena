@@ -169,6 +169,13 @@ Step 4: Record with Quest 3
    #. Move it laterally over the plate.
    #. Open the gripper to release the apple onto the plate.
 
+   These four phases also map directly onto the two annotation boundaries you'll mark in
+   :doc:`step_3_data_generation`: ``S`` press #1 (``idle_right``) lands at the transition between
+   phase 1 and phase 2 (gripper still open above the apple, just before closing); ``S`` press #2
+   (``grasp_and_idle_right``) lands at the transition between phase 2 and phase 3 (apple lifted
+   clear of the shelf, just before the lateral move). See *What you'll do during annotation* in
+   the data-generation page for the full timeline.
+
    Demos for this task should be noticeably shorter than the loco-manip variant (no walk / turn /
    squat phases), so you can collect 10 successful demos in around 5--10 minutes once the pipeline is
    running.

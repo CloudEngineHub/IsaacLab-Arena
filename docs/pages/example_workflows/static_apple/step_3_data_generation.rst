@@ -31,37 +31,109 @@ To start the annotation process, run the following command:
      --object apple_01_objaverse_robolab \
      --destination clay_plates_hot3d_robolab
 
-Follow the instructions described on the CLI to complete the annotation. You will be
-prompted to mark **two** subtask boundaries with the ``S`` key:
+The script replays each recorded demo and prompts you to mark **two** subtask
+boundaries with the ``S`` key — one for ``idle_right`` and one for
+``grasp_and_idle_right``. The remaining trajectory (move + place + release) is the
+right arm's final unmarked subtask, runs to the end of the demo, and needs no
+annotation.
 
-#. ``idle_right`` — when the right arm reaches its pre-grasp pose with the gripper
-   still open, just before closing it on the apple.
-#. ``grasp_and_idle_right`` — when the right arm has closed the gripper, lifted the
-   apple clear of the shelf, and is holding it ready to move laterally to the plate.
+What you'll do during annotation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The remaining trajectory (move + place + release) is the right arm's final unmarked
-subtask, runs to the end of the demo, and needs no annotation.
+When the script starts replaying an episode, it prints:
+
+.. code-block:: text
+
+   Playing the episode for subtask annotations for eef "right".
+   Subtask signals to annotate:
+       - Termination:  ['idle_right', 'grasp_and_idle_right']
+
+   Press "N" to begin.
+   Press "B" to pause.
+   Press "S" to annotate subtask signals.
+   Press "Q" to skip the episode.
+
+You replay the recorded demo once and press ``S`` exactly **twice** — once for each
+boundary. Mapped onto the four teleop phases from
+:doc:`step_2_teleoperation` (Reach → Lift → Move → Release), the two ``S`` presses
+fall between phases 1 ↔ 2 and 2 ↔ 3:
+
+.. code-block:: text
+
+   recorded demo timeline ----------------------------------------------------->
+
+   t=0                  t~t1                            t~t2                  t=end
+   |                    |                               |                     |
+   |  Phase 1: REACH    |  Phase 2: GRASP + LIFT        |  Phase 3: PLACE     |
+   |  arm tracks toward |  fingers close on apple,      |  lateral move over  |
+   |  apple, gripper    |  apple lifted ~5-10 cm clear  |  plate, lower, open |
+   |  still OPEN        |  of the shelf surface         |  gripper, release   |
+   |                    ^                               ^                     |
+   |                    |                               |                     |
+   |              press S #1                      press S #2          (no press;
+   |              -> idle_right             -> grasp_and_idle_right    final subtask
+   |                                                                  runs to end)
+
+Concrete cues to look for in the playback:
+
+* **S press #1 (idle_right)**: the wrist is hovering directly above the apple, the
+  gripper is still **open**, and motion has just paused before the gripper closes.
+  *Not* after the gripper has closed.
+* **S press #2 (grasp_and_idle_right)**: the gripper has closed on the apple, the
+  apple has been lifted clear of the shelf, and the arm is briefly holding the
+  lifted apple stationary before starting the lateral move toward the plate.
+  *Not* during the lateral move.
+
+.. list-table:: Keyboard controls during annotation
+   :header-rows: 1
+   :widths: 15 85
+
+   * - Key
+     - Action
+   * - ``N``
+     - Start / resume the replay.
+   * - ``B``
+     - Pause the replay (use this to line up an ``S`` press precisely).
+   * - ``S``
+     - Mark a subtask boundary at the current replay frame.
+   * - ``Q``
+     - Skip the current episode (it won't be exported to the annotated dataset).
 
 .. note::
 
-   The static Mimic config (``StaticPickAndPlaceMimicEnvCfg``) inherits the right-arm
-   3-step subtask sequence from the loco-manip variant and overrides two of the
-   remaining channels:
+   You'll only ever be prompted for the **right** arm. The script silently skips
+   the ``left`` and ``body`` channels because both are collapsed to a single no-op
+   subtask in the static cfg (see *Why only the right arm?* below) — that's
+   expected, not a bug.
 
-   * **Body**: the loco-manip's four navigation phases
-     (``navigate_to_table -> navigate_turn_inplace -> navigate_to_bin -> final``)
-     are collapsed into a single no-op subtask spanning the whole demo. The nav
-     termination signals never fire in the static env (the robot never moves its base),
-     so a four-phase body group would deadlock Mimic at annotation time.
-   * **Left arm**: the loco-manip's three-step ``idle_left -> grasp_and_idle_left ->
-     final`` sequence is also collapsed into a single no-op. Apple-to-plate on a single
-     shelf is a one-arm pinch-grasp task — the left arm just hangs — so forcing the user
-     to mark left-arm boundaries would be annotation theatre. Mimic still generates the
-     left arm's trajectory verbatim from the source demo (no segmentation, no source-demo
-     switching).
+.. note::
 
-   The end result: the user only annotates two right-arm boundaries per demo, instead
-   of the four (2 right + 2 left) the loco-manip variant requires.
+   If you press ``S`` the wrong number of times (≠ 2), the script logs
+   ``Only X out of 2 subtask signals for eef "right" were annotated`` and replays
+   the same episode from the start. No teleop work is lost; you just take another
+   pass through the replay.
+
+Why only the right arm?
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The static Mimic config (``StaticPickAndPlaceMimicEnvCfg``) inherits the right-arm
+3-step subtask sequence from the loco-manip variant and overrides the other two
+channels:
+
+* **Body**: the loco-manip's four navigation phases
+  (``navigate_to_table -> navigate_turn_inplace -> navigate_to_bin -> final``) are
+  collapsed into a single no-op subtask spanning the whole demo. The nav
+  termination signals never fire in the static env (the robot never moves its
+  base), so a four-phase body group would deadlock Mimic at annotation time.
+* **Left arm**: the loco-manip's three-step ``idle_left -> grasp_and_idle_left ->
+  final`` sequence is also collapsed into a single no-op. Apple-to-plate on a
+  single shelf is a one-arm pinch-grasp task — the left arm just hangs — so
+  forcing the user to mark left-arm boundaries would be annotation theatre. Mimic
+  still generates the left arm's trajectory verbatim from the source demo (no
+  segmentation, no source-demo switching).
+
+The end result: the user only annotates two right-arm boundaries per demo, instead
+of the four (2 right + 2 left) the loco-manip variant requires.
 
 
 Step 2: Generate Augmented Dataset
