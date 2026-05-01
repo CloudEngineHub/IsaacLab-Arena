@@ -15,12 +15,6 @@ same 23-D action layout. The only differences are:
    subtask sequence (``navigate_to_table -> ... -> navigate_to_bin -> final``) into a
    single no-op subtask, since the body channel never moves and there are no nav term
    signals to segment on.
-
-Note: an earlier iteration of this env shipped a fixed-base PinkIK variant
-(``fix_root_link=True`` + custom 28-D upper-body action layout). It was visually awkward
-(welded pelvis, unactuated legs) and required parallel embodiment / scene / action /
-observation / event / MimicEnv classes. Switching to WBC + same-shelf placement removes
-all of that custom code while still giving us a no-locomotion data-gen surface.
 """
 
 from __future__ import annotations
@@ -68,8 +62,7 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
         #
         #   - Robot pose mirrors the locomanip env exactly so the WBC controller stands
         #     the robot up in the same shelf-relative spot. The controller dynamically
-        #     lifts the pelvis to ~z=0.74 at runtime; init_state.pos.z=0 is correct here
-        #     (do NOT change to 0.78 -- that's only required for fix_root_link variants).
+        #     lifts the pelvis to ~z=0.74 at runtime; init_state.pos.z=0 is correct.
         #
         #   - SHELF_SURFACE_Z is measured: spawned a plate at z=0.0707 (locomanip's apple
         #     z) and let it gravity-settle; final z was -0.030 in the env-local frame.

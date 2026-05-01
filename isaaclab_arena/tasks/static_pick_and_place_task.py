@@ -3,22 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pick-and-place task for the static-base G1 (WBC stands the robot in place; no nav).
-
-Implementation note
--------------------
-Originally this module shipped a fixed-base PinkIK variant (``fix_root_link=True`` on the
-G1 root) with its own 28-D upper-body action space + a custom ``G1MimicEnv`` subclass that
-dropped the body channel. That setup was simpler conceptually but visually awkward (the
-welded pelvis had to be tuned to land the bent-knee standing pose's feet on the floor, and
-the legs were simulated but unactuated). We replaced it with the WBC-stand-only variant:
-the same ``g1_wbc_pink`` embodiment used by the locomanip env, just with the apple and
-plate placed on the *same* shelf so the robot never needs to navigate. The action space is
-identical to locomanip (23D), the OpenXR retargeter is identical, and the only Mimic
-difference is here -- we collapse the locomanip's nav-segmenting body subtask sequence
-(``navigate_to_table -> navigate_turn_inplace -> navigate_to_bin -> final``) into a single
-no-op subtask, since the body channel stays at "stand still" the whole demo.
-"""
+"""Pick-and-place task for the static-base G1 (WBC stands the robot in place; no nav)."""
 
 from isaaclab.envs.mimic_env_cfg import SubTaskConfig
 from isaaclab.utils import configclass
