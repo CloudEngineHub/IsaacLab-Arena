@@ -1,5 +1,147 @@
 # llm_env_gen — change log
 
+## Xinjie Yao — 2026-05-04
+
+### 1. What it can do
+
+- **Reach-aware robot placement at gen time** — opt-in via
+  `auto_generate_env --use-reach-solver`. Replaces the random
+  `(edge, fraction)` sampler with a joint Adam solve that maximizes
+  top-down IK reachability for the goal-bound items against a
+  precomputed Franka workspace EDT. The selected
+  `(edge, fraction, offset_m)` is baked into the rendered env module
+  exactly as today's static placement is — generated env files stay
+  declarative, no torch / scipy / EDT imports, no runtime IK code.
+- **Continuous outward offset** — the robot's standoff from the table
+  edge is now per-placement (was a hardcoded 0.1 m). The reach solver
+  picks it from `[0.05, 0.40]` m so the workspace shell can be slid
+  forward / back to better cover the manipulables. Random-sampled
+  placements still default to 0.1 m.
+- **Joint reach + placement POC** —
+  `isaaclab_arena_examples/relations/joint_reach_solver_poc.py` runs
+  the same solve standalone with no Isaac Sim in the loop, plotting
+  per-edge top-downs + heading arrows + EDT slice + loss curves to a
+  PNG. Used as the library that the gen-time path imports, plus as a
+  sandbox for tuning slopes / loss terms.
+- **Auto-import LLM-generated envs** —
+  `isaaclab_arena_environments/llm_generated/` is now a proper
+  sub-package. Canonical (un-suffixed) files there get registered at
+  import time alongside hand-written envs;
+  `_t<N>`-suffixed trial files are filtered out.
+
+### 2. What was added
+
+- `isaaclab_arena/llm_env_gen/placement_proposer.py`
+  - `_BACKGROUND_TABLETOP_XY_BBOX` — gen-time approximate world XY
+    bboxes per background. Coarse (the reach solver is robust to ~10%
+    bbox error); refinable later by querying live Sim.
+  - `ReachSolverCfg` — dataclass for `(npz_path, iters, seed)`.
+  - `propose_placement(reach_solver=...)` — routes to either the
+    existing random sampler or the new reach-aware sibling. Falls back
+    to random for backgrounds not in the bbox catalog.
+  - `_propose_robot_placement_via_reach` — builds a 3-`DummyObject`
+    scene (table + goal subject + goal target) and runs the POC's
+    `joint_solve` over all 4 cardinal edges in parallel, returns the
+    lowest-loss `RobotPlacement`. Lazy-imports torch + scipy so plain
+    proposer use pays no cost.
+
+- `isaaclab_arena/llm_env_gen/env_writer.py`
+  - `write_env(reach_solver=...)` forwards the config to
+    `propose_placement`.
+  - `_render_robot_pose` rounds `offset_m` to 4 decimals so the
+    rendered Python literal is readable (was raw `repr`).
+
+- `isaaclab_arena/llm_env_gen/auto_generate_env.py`
+  - `--use-reach-solver` / `--reach-npz` / `--reach-solver-iters` /
+    `--reach-solver-seed` CLI flags.
+  - Builds `ReachSolverCfg` once, threads through both the per-attempt
+    `write_env` and the canonical (un-suffixed) `write_env` at the end
+    — without that second forward, the canonical file silently fell
+    back to the random sampler.
+  - Placement log line includes `off=…` so retries can be diagnosed.
+
+- `isaaclab_arena_examples/relations/joint_reach_solver_poc.py`
+  - `ReachField.from_npz` — loads the precomputed reach map and
+    builds an outside-EDT (`scipy.ndimage.distance_transform_edt`).
+  - `joint_solve` — Adam over `(object world XYZ, raw_fraction,
+    raw_offset)` batched across the 4 edges; per-env yaw is a fixed
+    cardinal rotation matrix (constant w.r.t. autograd). Loss terms:
+    `On(table)`, reach (distance-to-reachable EDT, dominant),
+    object-vs-object NoCollision (hard), robot-vs-object NoCollision
+    (soft, ~100× weaker than reach so reachability wins ties).
+  - Visualization: per-env top-downs with heading arrows + EDT slice +
+    loss curves saved to PNG. CLI knobs include `--init_jitter_xy`,
+    `--offset_range`, `--reach_weight`, `--robot_obj_collision_slope`,
+    `--table_size`.
+
+- `tools/franka_reach_top_down.npz` / `.png` — precomputed reach map +
+  visualization. Used by the POC and by the gen-time reach path.
+
+- `isaaclab_arena_environments/__init__.py` —
+  hand-iterates top-level modules + recurses into the explicit
+  `_RECURSE_SUBPACKAGES = {"llm_generated"}` list. Skips subpackages
+  like `mdp/` whose `__init__.py` does
+  `from isaaclab.envs.mdp import *` (which would pull
+  isaaclab + numpy / scipy before SimulationApp boots and trip the
+  OpenBLAS atfork crash inside Kit's startup). Skips `_t<N>`
+  trial-file stragglers from aborted gen runs.
+
+- `isaaclab_arena_environments/llm_generated/__init__.py` — make the
+  directory a proper sub-package.
+
+### 3. Commands
+
+```bash
+# Run the standalone joint-solver POC sandbox (no Isaac Sim).
+/isaac-sim/python.sh \
+  isaaclab_arena_examples/relations/joint_reach_solver_poc.py \
+  --reach_npz tools/franka_reach_top_down.npz \
+  --out_png tools/poc_joint_reach_solver.png
+
+# Auto-generate an env with reach-aware robot placement.
+# Runs in the curobo container (cuRobo IK is the post-gen feasibility oracle).
+docker exec isaaclab_arena-curobo bash -c \
+  'cd /workspaces/isaaclab_arena && /isaac-sim/python.sh \
+   isaaclab_arena/llm_env_gen/auto_generate_env.py \
+   --use-reach-solver --max-attempts 4'
+
+# Bring up the regenerated env in the Kit viewer.
+docker exec isaaclab_arena-latest bash -c \
+  'cd /workspaces/isaaclab_arena && /isaac-sim/python.sh \
+   isaaclab_arena/evaluation/policy_runner.py \
+   --policy_type zero_action --num_steps 200 --viz kit \
+   avocadoPnPbowltable'
+
+# Overlay the reachability shell on the running env.
+docker exec isaaclab_arena-latest bash -c \
+  'cd /workspaces/isaaclab_arena && /isaac-sim/python.sh \
+   tools/viz_reach_map_kit.py --viz kit \
+   --load_npz tools/franka_reach_top_down.npz \
+   --dwell_steps 600 avocadoPnPbowltable'
+```
+
+### 4. TODOs
+
+- `_BACKGROUND_TABLETOP_XY_BBOX` values are coarse estimates. Add a
+  one-shot tool that boots Sim once, captures
+  `tabletop_anchor.get_world_bounding_box()` per background, and
+  rewrites the catalog. The container's SimulationApp init currently
+  segfaults on this host (OpenBLAS atfork inside Kit startup) — the
+  measurement script needs to defer scipy / numpy imports until after
+  Kit boots, or run inside an env-build context where Sim is already
+  up.
+- The reach term assumes top-down grasp orientation
+  (`quat_wxyz=(0,1,0,0)` in the npz). For Open/Close-door tasks the
+  approach is horizontal; either skip the term for those task plans
+  or generate a second NPZ at the door-approach orientation and
+  switch maps based on the resolved task.
+- The robot-vs-object NoCollision currently models only the panda
+  link0 mounting plate (~0.24 × 0.24 × 0.30 m AABB at object height).
+  Modeling the arm sweep over the table as a forward-extending
+  dynamic AABB would let the term meaningfully trade off against
+  reach; today it almost never engages because the stand sits outside
+  the table.
+
 ## Xinjie Yao — 2026-04-28
 
 ### 1. What it can do
