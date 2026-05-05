@@ -36,13 +36,6 @@ parser.add_argument(
         " --num_envs is 1."
     ),
 )
-parser.add_argument(
-    "--enable_pinocchio",
-    action="store_true",
-    default=False,
-    help="Enable Pinocchio.",
-)
-
 # Add the example environments CLI args
 # NOTE(alexmillane, 2025.09.04): This has to be added last, because
 # of the app specific flags being parsed after the global flags.
@@ -51,11 +44,6 @@ add_example_environments_cli_args(parser)
 # parse the arguments
 args_cli = parser.parse_args()
 # args_cli.headless = True
-
-if args_cli.enable_pinocchio:
-    # Import pinocchio before AppLauncher to force the use of the version installed by IsaacLab and not the one installed by Isaac Sim
-    # pinocchio is required by the Pink IK controllers and the GR1T2 retargeter
-    import pinocchio  # noqa: F401
 
 # launch the simulator
 app_launcher = AppLauncher(args_cli)
@@ -68,13 +56,10 @@ import gymnasium as gym
 import os
 import torch
 
+import isaaclab_tasks  # noqa: F401
+import isaaclab_tasks.manager_based.manipulation.pick_place  # noqa: F401
 from isaaclab.devices import Se3Keyboard, Se3KeyboardCfg
 from isaaclab.utils.datasets import EpisodeData, HDF5DatasetFileHandler
-
-if args_cli.enable_pinocchio:
-    import isaaclab_tasks.manager_based.manipulation.pick_place  # noqa: F401
-
-import isaaclab_tasks  # noqa: F401
 
 is_paused = False
 
@@ -127,6 +112,7 @@ def main():
     if not os.path.exists(args_cli.dataset_file):
         raise FileNotFoundError(f"The dataset file {args_cli.dataset_file} does not exist.")
     dataset_file_handler = HDF5DatasetFileHandler()
+
     dataset_file_handler.open(args_cli.dataset_file)
     env_name = dataset_file_handler.get_env_name()
     episode_count = dataset_file_handler.get_num_episodes()
@@ -150,7 +136,11 @@ def main():
     env_cfg.terminations = {}
 
     # create environment from loaded config
-    env = gym.make(env_name, cfg=env_cfg).unwrapped
+    env = gym.make(env_name, cfg=env_cfg)
+    from isaaclab_arena.utils.isaaclab_utils.simulation_app import reapply_viewer_cfg
+
+    reapply_viewer_cfg(env)
+    env = env.unwrapped
 
     teleop_interface = Se3Keyboard(Se3KeyboardCfg(pos_sensitivity=0.1, rot_sensitivity=0.1))
     teleop_interface.add_callback("N", play_cb)

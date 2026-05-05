@@ -3,17 +3,19 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
+from __future__ import annotations
 
+import argparse
+from typing import TYPE_CHECKING
+
+from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
-# NOTE(alexmillane, 2025.09.04): There is an issue with type annotation in this file.
-# We cannot annotate types which require the simulation app to be started in order to
-# import, because this file is used to retrieve CLI arguments, so it must be imported
-# before the simulation app is started.
-# TODO(alexmillane, 2025.09.04): Fix this.
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
 
+@register_environment
 class FrankaPutAndCloseDoorEnvironment(ExampleEnvironmentBase):
     """
     A sequential task environment with two subtasks:
@@ -24,7 +26,7 @@ class FrankaPutAndCloseDoorEnvironment(ExampleEnvironmentBase):
 
     name = "franka_put_and_close_door"
 
-    def get_env(self, args_cli: argparse.Namespace):
+    def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
         from isaaclab_arena.assets.object_base import ObjectType
         from isaaclab_arena.assets.object_reference import ObjectReference
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
@@ -51,7 +53,7 @@ class FrankaPutAndCloseDoorEnvironment(ExampleEnvironmentBase):
         container.set_initial_pose(
             Pose(
                 position_xyz=(0.4, -0.00586, 0.22773),
-                rotation_wxyz=(0.7071068, 0, 0, -0.7071068),
+                rotation_xyzw=(0, 0, -0.7071068, 0.7071068),
             )
         )
 
@@ -67,11 +69,11 @@ class FrankaPutAndCloseDoorEnvironment(ExampleEnvironmentBase):
         embodiment.set_initial_pose(
             Pose(
                 position_xyz=(-0.3, 0.0, -0.5),
-                rotation_wxyz=(1.0, 0.0, 0.0, 0.0),
+                rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
             )
         )
 
-        if args_cli.embodiment == "franka":
+        if args_cli.embodiment == "franka_ik":
             # Set Franka arm pose for kitchen setup
             embodiment.set_initial_joint_pose([0.0, -1.309, 0.0, -2.793, 0.0, 3.037, 0.740, 0.04, 0.04])
 
@@ -123,5 +125,5 @@ class FrankaPutAndCloseDoorEnvironment(ExampleEnvironmentBase):
     @staticmethod
     def add_cli_args(parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--object", type=str, default="dex_cube", help="Object to pick and place in the microwave")
-        parser.add_argument("--embodiment", type=str, default="franka", help="Robot embodiment to use")
+        parser.add_argument("--embodiment", type=str, default="franka_ik", help="Robot embodiment to use")
         parser.add_argument("--teleop_device", type=str, default=None, help="Teleoperation device to use")

@@ -3,11 +3,19 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
+from __future__ import annotations
 
+import argparse
+from typing import TYPE_CHECKING
+
+from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
+
+@register_environment
 class TableTopSortCubesEnvironment(ExampleEnvironmentBase):
     """
     A pick and place environment for the Seattle Lab table.
@@ -15,7 +23,7 @@ class TableTopSortCubesEnvironment(ExampleEnvironmentBase):
 
     name = "tabletop_sort_cubes"
 
-    def get_env(self, args_cli: argparse.Namespace):
+    def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
 
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene
@@ -32,11 +40,11 @@ class TableTopSortCubesEnvironment(ExampleEnvironmentBase):
         background.set_initial_pose(
             Pose(
                 position_xyz=(0.3, 0.0, 0.0),
-                rotation_wxyz=(1.0, 0.0, 0.0, 0.0),
+                rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
             )
         )
 
-        if args_cli.embodiment == "franka":
+        if args_cli.embodiment == "franka_ik":
             embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(
                 enable_cameras=args_cli.enable_cameras
             )
@@ -44,7 +52,7 @@ class TableTopSortCubesEnvironment(ExampleEnvironmentBase):
             embodiment.set_initial_pose(
                 Pose(
                     position_xyz=(-0.4, 0.0, 0.0),
-                    rotation_wxyz=(1.0, 0.0, 0.0, 0.0),
+                    rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
                 )
             )
 
@@ -68,7 +76,7 @@ class TableTopSortCubesEnvironment(ExampleEnvironmentBase):
         destination_location_1.set_initial_pose(
             Pose(
                 position_xyz=(0.0, 0.1, 0.1),
-                rotation_wxyz=(1.0, 0.0, 0.0, 0.0),
+                rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
             )
         )
 
@@ -76,7 +84,7 @@ class TableTopSortCubesEnvironment(ExampleEnvironmentBase):
         destination_location_2.set_initial_pose(
             Pose(
                 position_xyz=(0.0, -0.1, 0.1),
-                rotation_wxyz=(1.0, 0.0, 0.0, 0.0),
+                rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
             )
         )
 
@@ -84,7 +92,7 @@ class TableTopSortCubesEnvironment(ExampleEnvironmentBase):
         pick_up_object_1.set_initial_pose(
             Pose(
                 position_xyz=(0.0, 0.3, 0.1),
-                rotation_wxyz=(1.0, 0.0, 0.0, 0.0),
+                rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
             )
         )
 
@@ -92,7 +100,7 @@ class TableTopSortCubesEnvironment(ExampleEnvironmentBase):
         pick_up_object_2.set_initial_pose(
             Pose(
                 position_xyz=(0.0, -0.3, 0.1),
-                rotation_wxyz=(1.0, 0.0, 0.0, 0.0),
+                rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
             )
         )
 
@@ -140,5 +148,5 @@ class TableTopSortCubesEnvironment(ExampleEnvironmentBase):
             help="destination list (example: --destinations red_container green_container)",
         )
         parser.add_argument("--background", type=str, default="table")
-        parser.add_argument("--embodiment", type=str, default="franka")
+        parser.add_argument("--embodiment", type=str, default="franka_ik")
         parser.add_argument("--teleop_device", type=str, default=None)

@@ -31,7 +31,7 @@ jobs:
 
   pre_commit:
     name: Pre-commit
-    runs-on: [self-hosted, gpu]
+    runs-on: [self-hosted, gpu-arena]
     timeout-minutes: 30
 
     container:
@@ -89,11 +89,15 @@ jobs:
         uses: pre-commit/action@v3.0.1
         with:
           extra_args: --all-files --verbose
+        env:
+          # Avoid "dubious ownership" errors on restored cache dirs — use a
+          # fresh directory owned by the current process instead.
+          PRE_COMMIT_HOME: /tmp/pre-commit-cache
 
   test:
     name: Run tests
-    runs-on: [self-hosted, gpu]
-    timeout-minutes: 60
+    runs-on: [self-hosted, gpu-arena]
+    timeout-minutes: 80
     needs: [pre_commit]
 
     container:
@@ -108,6 +112,10 @@ jobs:
         name: nvidia-smi
         run: nvidia-smi
 
+      - &lscpu
+        name: lscpu
+        run: lscpu
+
       # Setup
       - *install_git_step
       - *cleanup_step
@@ -118,31 +126,54 @@ jobs:
       - &install_project_step
         name: Install project and link isaac-sim
         run: |
-          pip install --no-cache-dir -e .
+          /isaac-sim/python.sh -m pip install --no-cache-dir -e .
           [ -e ./submodules/IsaacLab/_isaac_sim ] || ln -s /isaac-sim ./submodules/IsaacLab/_isaac_sim
 
-      # Run the tests (excluding the gr00t related tests)
-      - name: Run pytest excluding policy-related tests. First we run all tests without cameras.
-        run: /isaac-sim/python.sh -m pytest -sv -m "not with_cameras" isaaclab_arena/tests/
+      - &setup_isaac_sim_kit_cache_step
+        name: Setup Isaac Sim kit cache (shader warmup on miss)
+        uses: ./.github/actions/setup-isaac-sim-kit-cache
 
-      - name: Run pytest excluding policy-related tests. Now we run all tests with cameras.
-        run: /isaac-sim/python.sh -m pytest -sv -m with_cameras isaaclab_arena/tests/
+      # Run the tests.
+      #
+      # Note(alexmillane): We have to run the tests in a specific way. To achieve a reasonable test speed,
+      # we don't close the SimulationApp between tests, where this is possible. We need, however, to restart the
+      # SimulationApp between tests that require cameras/rendering and those that don't. To make
+      # matters more complicated, since Isaac Sim 6.0, this persistent SimulationApp scheme is also not
+      # mixing well with subprocess-spawning tests. We get intermittent hangs if a subprocess-spawning
+      # test is run while a persistent SimulationApp is still open. For that reason we also need to
+      # separate those test that spawn subprocess. So in the end, we run
+      #
+      # - All tests not requiring cameras in a shared SimulationApp.
+      # - All tests requiring cameras in a shared SimulationApp.
+      # - All subprocess-spawning tests (each spawns their own SimulationApp)
+      #
+      # To restore sanity here is a goal for Isaac Lab Arena v0.3.
+      - name: Run in-process Newton tests
+        run: |
+          /isaac-sim/python.sh -m pytest -sv --durations=0 -m with_newton \
+            isaaclab_arena/tests/
+
+      - name: Run in-process PhysX tests without cameras
+        run: |
+          /isaac-sim/python.sh -m pytest -sv --durations=0 -m "not with_cameras and not with_subprocess and not with_newton" \
+            isaaclab_arena/tests/
 
 
-  test_policy:
-    name: Run policy-related tests with GR00T & cuda12_8 deps
-    runs-on: [self-hosted, gpu]
+  tests_with_subprocess:
+    name: Run tests with subprocess
+    runs-on: [self-hosted, gpu-arena]
     timeout-minutes: 60
     needs: [pre_commit]
 
     container:
-      image: nvcr.io/nvstaging/isaac-amr/isaaclab_arena:cuda_gr00t_gn16
+      image: nvcr.io/nvstaging/isaac-amr/isaaclab_arena:latest
       credentials:
         username: $oauthtoken
         password: ${{ env.NGC_API_KEY }}
     steps:
       # nvidia-smi
       - *nvidia_smi
+      - *lscpu
 
       # Setup.
       - *install_git_step
@@ -151,15 +182,55 @@ jobs:
       - *checkout_step
       - *git_lfs_step
       - *install_project_step
+      - *setup_isaac_sim_kit_cache_step
+
+      # NOTE(alexmillane): These tests are unreliable at the moment, and often stall,
+      # causing the whole CI run to fail. I am moving these to a parallel job, and then
+      # will make the job containing them optional in terms of passing.
+      - name: Run subprocess-spawning PhysX tests
+        run: |
+          ISAACLAB_ARENA_SUBPROCESS_TIMEOUT=900 \
+          /isaac-sim/python.sh -m pytest -sv --durations=0 -m with_subprocess \
+            isaaclab_arena/tests/
+
+
+  test_policy:
+    name: Run policy-related tests with GR00T & cuda12_8 deps
+    runs-on: [self-hosted, gpu-arena]
+    timeout-minutes: 60
+    needs: [pre_commit]
+
+    container:
+      image: nvcr.io/nvstaging/isaac-amr/isaaclab_arena:cuda_gr00t_gn16
+      credentials:
+        username: $oauthtoken
+        password: ${{ env.NGC_API_KEY }}
+    env:
+      GROOT_DEPS_DIR: /opt/groot_deps
+    steps:
+      # nvidia-smi
+      - *nvidia_smi
+      - *lscpu
+
+      # Setup.
+      - *install_git_step
+      - *cleanup_step
+      - *mark_repo_safe_step
+      - *checkout_step
+      - *git_lfs_step
+      - *install_project_step
+      - *setup_isaac_sim_kit_cache_step
 
       # Run the policy (GR00T) related tests.
       - name: Run policy-related pytest
-        run: /isaac-sim/python.sh -m pytest -sv isaaclab_arena_gr00t/tests/
+        run: |
+          ISAACLAB_ARENA_SUBPROCESS_TIMEOUT=900 \
+          /isaac-sim/python.sh -m pytest -sv --durations=0 isaaclab_arena_gr00t/tests/
 
 
   build_docs_pre_merge:
     name: Build the docs (pre-merge)
-    runs-on: [self-hosted, gpu]
+    runs-on: [self-hosted, gpu-arena]
     timeout-minutes: 30
     needs: [pre_commit]
 
@@ -185,7 +256,7 @@ jobs:
 
   build_and_push_image_post_merge:
     name: Build & push NGC image (post-merge)
-    runs-on: [self-hosted, gpu]
+    runs-on: [self-hosted, gpu-arena]
     timeout-minutes: 90
     needs: [test, test_policy]       # only push if tests passed
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

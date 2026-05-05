@@ -16,6 +16,7 @@ Guidelines for modifications:
 * Sangeeta Subramanian <sangeetas@nvidia.com> (NVIDIA)
 * Vikram Ramasamy <viiik-inside, vramasamy@nvidia.com> (NVIDIA)
 * Xinjie Yao <xyao-nv, xyao@nvidia.com> (NVIDIA)
+* Zihao Xiao <zhx06, zihaox@nvidia.com> (NVIDIA)
 
 ## LightWheel AI
 
@@ -27,9 +28,11 @@ Guidelines for modifications:
 ## Contributors
 
 * Ashley Chow <ashchow@nvidia.com> (NVIDIA)
+* Fabio Ramos <ftozetoramos@nvidia.com> (NVIDIA)
+* Hui Kang <hkang@nvidia.com> (NVIDIA)
 * Lance Li <Nyquist0, lancel@nvidia.com> (NVIDIA)
 * Mikhail Yurasov <myurasov-nv, myurasov@nvidia.com> (NVIDIA)
 * Rebecca Zhang <rebeccazhang0707, rebeccaz@nvidia.com> (NVIDIA)
 * Shiwei Sheng <shiweis, shiweis@nvidia.com> (NVIDIA)
 * Weihua Zhang <yami007007-weihuaz, weihuaz@nvidia.com> (NVIDIA)
-* Hui Kang <hkang@nvidia.com> (NVIDIA)
+* Xuning Yang <xuningy@nvidia.com> (NVIDIA)

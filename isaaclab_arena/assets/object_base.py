@@ -3,10 +3,13 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+from __future__ import annotations
+
 import torch
 from abc import ABC, abstractmethod
 from enum import Enum
 
+import warp as wp
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedEnv
 from isaaclab.managers import EventTermCfg, SceneEntityCfg
@@ -14,16 +17,17 @@ from isaaclab.sensors.contact_sensor.contact_sensor_cfg import ContactSensorCfg
 from isaaclab_tasks.manager_based.manipulation.stack.mdp.franka_stack_events import randomize_object_pose
 
 from isaaclab_arena.assets.asset import Asset
-from isaaclab_arena.relations.relations import AtPosition, Relation, RelationBase
-from isaaclab_arena.terms.events import set_object_pose
-from isaaclab_arena.utils.pose import Pose, PoseRange
+from isaaclab_arena.relations.relations import Relation, RelationBase, UnaryRelation
+from isaaclab_arena.terms.events import set_object_pose, set_object_pose_per_env
+from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
+from isaaclab_arena.utils.pose import Pose, PosePerEnv, PoseRange
+from isaaclab_arena.utils.velocity import Velocity
 
 
 class ObjectType(Enum):
     BASE = "base"
     RIGID = "rigid"
     ARTICULATION = "articulation"
-    SPAWNER = "spawner"
 
 
 class ObjectBase(Asset, ABC):
@@ -41,12 +45,13 @@ class ObjectBase(Asset, ABC):
             prim_path = "{ENV_REGEX_NS}/" + self.name
         self.prim_path = prim_path
         self.object_type = object_type
-        self.initial_pose: Pose | PoseRange | None = None
+        self.initial_pose: Pose | PoseRange | PosePerEnv | None = None
+        self.initial_velocity: Velocity | None = None
         self.object_cfg = None
         self.event_cfg = None
         self.relations: list[RelationBase] = []
 
-    def get_initial_pose(self) -> Pose | PoseRange | None:
+    def get_initial_pose(self) -> Pose | PoseRange | PosePerEnv | None:
         """Return the current initial pose of this object.
 
         Subclasses may override to derive the pose from other sources
@@ -54,30 +59,62 @@ class ObjectBase(Asset, ABC):
         """
         return self.initial_pose
 
+    @abstractmethod
+    def get_bounding_box(self) -> AxisAlignedBoundingBox:
+        """Get local bounding box (relative to object origin)."""
+        ...
+
+    @abstractmethod
+    def get_world_bounding_box(self) -> AxisAlignedBoundingBox:
+        """Get bounding box in world coordinates (local bbox rotated and translated)."""
+        ...
+
     def _get_initial_pose_as_pose(self) -> Pose | None:
         """Return a single ``Pose`` suitable for *init_state* and bounding-box calculations.
 
         If the initial pose is a ``PoseRange``, its midpoint is returned.
+        If the initial pose is a ``PosePerEnv``, the first environment's pose is returned.
         If the initial pose is ``None``, ``None`` is returned.
         """
         initial_pose = self.get_initial_pose()
         if initial_pose is None:
             return None
+        if isinstance(initial_pose, PosePerEnv):
+            return initial_pose.poses[0]
         if isinstance(initial_pose, PoseRange):
             return initial_pose.get_midpoint()
         return initial_pose
 
-    def set_initial_pose(self, pose: Pose | PoseRange) -> None:
+    def set_initial_pose(self, pose: Pose | PoseRange | PosePerEnv) -> None:
         """Set / override the initial pose and rebuild derived configs.
 
         Args:
-            pose: A fixed ``Pose`` or a ``PoseRange`` (randomised on reset).
+            pose: A fixed ``Pose``, a ``PoseRange`` (randomised on reset),
+                or a ``PosePerEnv`` (distinct pose per environment).
         """
         self.initial_pose = pose
         initial_pose = self._get_initial_pose_as_pose()
         if initial_pose is not None and self.object_cfg is not None:
             self.object_cfg.init_state.pos = initial_pose.position_xyz
-            self.object_cfg.init_state.rot = initial_pose.rotation_wxyz
+            self.object_cfg.init_state.rot = initial_pose.rotation_xyzw
+        self.event_cfg = self._init_event_cfg()
+
+    def set_initial_velocity(self, velocity: Velocity) -> None:
+        """Set / override the initial velocity and rebuild derived configs.
+
+        The velocity is applied as ``init_state.lin_vel`` and
+        ``init_state.ang_vel`` on the underlying config
+        (``RigidObjectCfg`` or ``ArticulationCfg``) and is also restored
+        on every environment reset via the reset event.
+
+        Args:
+            velocity: A ``Velocity`` specifying linear and angular components.
+        """
+        self.initial_velocity = velocity
+        if self.object_cfg is not None and hasattr(self.object_cfg.init_state, "lin_vel"):
+            self.object_cfg.init_state.lin_vel = velocity.linear_xyz
+        if self.object_cfg is not None and hasattr(self.object_cfg.init_state, "ang_vel"):
+            self.object_cfg.init_state.ang_vel = velocity.angular_xyz
         self.event_cfg = self._init_event_cfg()
 
     def _requires_reset_pose_event(self) -> bool:
@@ -91,12 +128,21 @@ class ObjectBase(Asset, ABC):
         )
 
     def _init_event_cfg(self) -> EventTermCfg | None:
-        """Build the ``EventTermCfg`` for resetting this object's pose."""
+        """Build the ``EventTermCfg`` for resetting this object's pose and velocity."""
         if not self._requires_reset_pose_event():
             return None
 
         initial_pose = self.get_initial_pose()
-        if isinstance(initial_pose, PoseRange):
+        if isinstance(initial_pose, PosePerEnv):
+            return EventTermCfg(
+                func=set_object_pose_per_env,
+                mode="reset",
+                params={
+                    "asset_cfg": SceneEntityCfg(self.name),
+                    "pose_list": initial_pose.poses,
+                },
+            )
+        elif isinstance(initial_pose, PoseRange):
             return EventTermCfg(
                 func=randomize_object_pose,
                 mode="reset",
@@ -105,13 +151,14 @@ class ObjectBase(Asset, ABC):
                     "asset_cfgs": [SceneEntityCfg(self.name)],
                 },
             )
-        else:
+        else:  # Pose
             return EventTermCfg(
                 func=set_object_pose,
                 mode="reset",
                 params={
                     "pose": initial_pose,
                     "asset_cfg": SceneEntityCfg(self.name),
+                    "velocity": self.initial_velocity,
                 },
             )
 
@@ -121,7 +168,7 @@ class ObjectBase(Asset, ABC):
 
     def get_spatial_relations(self) -> list[RelationBase]:
         """Get only spatial relations (On, NextTo, AtPosition, etc.), excluding markers like IsAnchor."""
-        return [r for r in self.relations if isinstance(r, (Relation, AtPosition))]
+        return [r for r in self.relations if isinstance(r, (Relation, UnaryRelation))]
 
     def set_prim_path(self, prim_path: str) -> None:
         self.prim_path = prim_path
@@ -142,8 +189,6 @@ class ObjectBase(Asset, ABC):
             object_cfg = self._generate_articulation_cfg()
         elif self.object_type == ObjectType.BASE:
             object_cfg = self._generate_base_cfg()
-        elif self.object_type == ObjectType.SPAWNER:
-            object_cfg = self._generate_spawner_cfg()
         else:
             raise ValueError(f"Invalid object type: {self.object_type}")
         return object_cfg
@@ -157,18 +202,18 @@ class ObjectBase(Asset, ABC):
 
         Returns:
             The pose of the object in each environment. The shape is (num_envs, 7).
-            The order is (x, y, z, qw, qx, qy, qz).
+            The order is (x, y, z, qx, qy, qz, qw).
         """
         # We require that the asset has been added to the scene under its name.
-        assert self.name in env.scene.keys(), f"Asset {self.name} not found in scene"
+        assert self.name in env.unwrapped.scene.keys(), f"Asset {self.name} not found in scene"
         if (self.object_type == ObjectType.RIGID) or (self.object_type == ObjectType.ARTICULATION):
-            object_pose = env.scene[self.name].data.root_pose_w.clone()
+            object_pose = wp.to_torch(env.unwrapped.scene[self.name].data.root_pose_w).clone()
         elif self.object_type == ObjectType.BASE:
-            object_pose = torch.cat(env.scene[self.name].get_world_poses(), dim=-1)
+            object_pose = torch.cat(env.unwrapped.scene[self.name].get_world_poses(), dim=-1)
         else:
             raise ValueError(f"Function not implemented for object type: {self.object_type}")
         if is_relative:
-            object_pose[:, :3] -= env.scene.env_origins
+            object_pose[:, :3] -= env.unwrapped.scene.env_origins
         return object_pose
 
     def set_object_pose(self, env: ManagerBasedEnv, pose: Pose, env_ids: torch.Tensor | None = None) -> None:
@@ -178,26 +223,27 @@ class ObjectBase(Asset, ABC):
             env: The environment.
             pose: The pose to set.
         """
-        assert self.name in env.scene.keys(), f"Asset {self.name} not found in scene"
+        assert self.name in env.unwrapped.scene.keys(), f"Asset {self.name} not found in scene"
         if env_ids is None:
-            env_ids = torch.arange(env.num_envs, device=env.device)
+            env_ids = torch.arange(env.unwrapped.num_envs, device=env.unwrapped.device)
         # Grab the object
-        asset = env.scene[self.name]
+        asset = env.unwrapped.scene[self.name]
         num_envs = len(env_ids)
         # Convert the pose to the env frame
-        pose_t_xyz_q_wxyz = pose.to_tensor(device=env.device).repeat(num_envs, 1)
-        pose_t_xyz_q_wxyz[:, :3] += env.scene.env_origins[env_ids]
+        pose_t_xyz_q_xyzw = pose.to_tensor(device=env.unwrapped.device).repeat(num_envs, 1)
+        pose_t_xyz_q_xyzw[:, :3] += env.unwrapped.scene.env_origins[env_ids]
         # Set the pose and velocity
-        asset.write_root_pose_to_sim(pose_t_xyz_q_wxyz, env_ids=env_ids)
-        asset.write_root_velocity_to_sim(torch.zeros(1, 6, device=env.device), env_ids=env_ids)
+        asset.write_root_pose_to_sim(pose_t_xyz_q_xyzw, env_ids=env_ids)
+        asset.write_root_velocity_to_sim(
+            torch.zeros(env.unwrapped.num_envs, 6, device=env.unwrapped.device), env_ids=env_ids
+        )
 
-    def get_contact_sensor_cfg(self, contact_against_prim_paths: list[str] | None = None) -> ContactSensorCfg:
+    def get_contact_sensor_cfg(self, contact_against_object: ObjectBase | None = None) -> ContactSensorCfg:
         assert self.object_type == ObjectType.RIGID, "Contact sensor is only supported for rigid objects"
-        if contact_against_prim_paths is None:
-            contact_against_prim_paths = []
+        filter_prim_paths = [contact_against_object.get_prim_path()] if contact_against_object else []
         return ContactSensorCfg(
             prim_path=self.prim_path,
-            filter_prim_paths_expr=contact_against_prim_paths,
+            filter_prim_paths_expr=filter_prim_paths,
         )
 
     @abstractmethod
@@ -213,8 +259,4 @@ class ObjectBase(Asset, ABC):
     @abstractmethod
     def _generate_base_cfg(self) -> AssetBaseCfg:
         # Subclasses must implement this method
-        pass
-
-    def _generate_spawner_cfg(self) -> AssetBaseCfg:
-        # Object Subclasses must implement this method
         pass

@@ -5,7 +5,7 @@ This workflow covers post-training an example policy using the generated dataset
 here we use `GR00T N1.6 <https://github.com/NVIDIA/Isaac-GR00T>`_ as the base model.
 
 
-**Docker Container**: Base + GR00T (see :doc:`../../quickstart/docker_containers` for more details)
+**Docker Container**: Base + GR00T (see :doc:`../imitation_learning/index` for more details)
 
 :docker_run_gr00t:
 
@@ -35,6 +35,7 @@ pre-generated dataset from Hugging Face as described below.
          nvidia/Arena-GR1-Manipulation-Task \
          arena_gr1_manipulation_dataset_generated.hdf5 \
          --repo-type dataset \
+         --revision arena_v0.2_lab_v3.0 \
          --local-dir $DATASET_DIR
 
 
@@ -57,6 +58,7 @@ Note that this conversion step can be skipped by downloading the pre-converted L
          nvidia/Arena-GR1-Manipulation-Task \
          --include lerobot/* \
          --repo-type dataset \
+         --revision arena_v0.2_lab_v3.0 \
          --local-dir $DATASET_DIR/arena_gr1_manipulation_dataset_generated
 
    If you download this dataset, you can skip the conversion step below and continue to the next step.
@@ -101,18 +103,30 @@ Step 2: Post-train Policy
 
 We post-train the GR00T N1.6 policy on the task.
 
-The GR00T N1.6 policy has 3 billion parameters so post training is an an expensive operation.
+The GR00T N1.6 policy has 3 billion parameters so post-training is an expensive operation.
 We provide two post-training options:
 
 * Best Quality: 8 GPUs with 48GB memory
 * Low Hardware Requirements: 1 GPU with 24GB memory
 
 
-.. tabs::
+.. tab-set::
 
-   .. tab:: Best Quality
+   .. tab-item:: Best Quality
 
       Training takes approximately 4-8 hours on 8x L40s GPUs.
+
+      Compute Requirements:
+
+      - **GPUs:** 8x with at least 48 GB VRAM each (e.g. L40s, A6000, A100)
+      - **System RAM:** 512 GB or more recommended — multi-GPU training with large batch sizes
+        and multiple dataloader workers requires substantial host memory
+
+      .. note::
+
+         If your system has less RAM or fewer GPUs, you can reduce ``global_batch_size`` and
+         ``dataloader_num_workers`` to fit your hardware. Training will still work but will take
+         longer to converge.
 
       Training Configuration:
 
@@ -121,13 +135,13 @@ We provide two post-training options:
       - **Frozen Modules:** LLM (language model)
       - **Batch Size:** 24 (adjust based on GPU memory)
       - **Training Steps:** 20,000
-      - **GPUs:** 8 (multi-GPU training)
 
       To post-train the policy, run the following command
 
       .. code-block:: bash
 
-         python -m torch.distributed.run --nproc_per_node=8 --standalone submodules/Isaac-GR00T/gr00t/experiment/launch_finetune.py \
+         PYTHONPATH=$GROOT_DEPS_DIR:$PYTHONPATH python -m torch.distributed.run --nproc_per_node=8 --standalone \
+         submodules/Isaac-GR00T/gr00t/experiment/launch_finetune.py \
          --dataset_path=$DATASET_DIR/arena_gr1_manipulation_dataset_generated/lerobot \
          --output_dir=$MODELS_DIR \
          --modality_config_path=isaaclab_arena_gr00t/embodiments/gr1/gr1_arms_only_data_config.py \
@@ -141,13 +155,11 @@ We provide two post-training options:
          --tune_visual \
          --tune_projector \
          --tune_diffusion_model \
-         --no-resume \
          --dataloader_num_workers=16 \
-         --use-wandb \
          --embodiment_tag=GR1 \
          --color_jitter_params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08
 
-   .. tab:: Low Hardware Requirements
+   .. tab-item:: Low Hardware Requirements
 
       Training takes approximately 2-3 hours on 1x Ada6000 GPU.
 
@@ -164,7 +176,8 @@ We provide two post-training options:
 
       .. code-block:: bash
 
-         CUDA_VISIBLE_DEVICES=0 python submodules/Isaac-GR00T/gr00t/experiment/launch_finetune.py \
+         PYTHONPATH=$GROOT_DEPS_DIR:$PYTHONPATH CUDA_VISIBLE_DEVICES=0 \
+         python submodules/Isaac-GR00T/gr00t/experiment/launch_finetune.py \
          --dataset_path=$DATASET_DIR/arena_gr1_manipulation_dataset_generated/lerobot \
          --output_dir=$MODELS_DIR \
          --modality_config_path=isaaclab_arena_gr00t/embodiments/gr1/gr1_arms_only_data_config.py \
@@ -177,8 +190,7 @@ We provide two post-training options:
          --tune_visual \
          --tune_projector \
          --tune_diffusion_model \
-         --dataloader_num_workers=16 \
-         --use-wandb \
+         --dataloader_num_workers=4 \
          --embodiment_tag=GR1 \
          --color_jitter_params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
          --save_total_limit=5

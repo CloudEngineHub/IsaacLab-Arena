@@ -3,22 +3,24 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
+from __future__ import annotations
 
+import argparse
+from typing import TYPE_CHECKING
+
+from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
-# NOTE(alexmillane, 2025.09.04): There is an issue with type annotation in this file.
-# We cannot annotate types which require the simulation app to be started in order to
-# import, because this file is used to retrieve CLI arguments, so it must be imported
-# before the simulation app is started.
-# TODO(alexmillane, 2025.09.04): Fix this.
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
 
+@register_environment
 class Gr1OpenMicrowaveEnvironment(ExampleEnvironmentBase):
 
     name: str = "gr1_open_microwave"
 
-    def get_env(self, args_cli: argparse.Namespace):  # -> IsaacLabArenaEnvironment:
+    def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene
         from isaaclab_arena.tasks.open_door_task import OpenDoorTask
@@ -31,7 +33,7 @@ class Gr1OpenMicrowaveEnvironment(ExampleEnvironmentBase):
             args_cli.embodiment
         )
         embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(enable_cameras=args_cli.enable_cameras)
-        embodiment.set_initial_pose(Pose(position_xyz=(-0.4, 0.0, 0.0), rotation_wxyz=(1.0, 0.0, 0.0, 0.0)))
+        embodiment.set_initial_pose(Pose(position_xyz=(-0.4, 0.0, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
 
         if args_cli.teleop_device is not None:
             teleop_device = self.device_registry.get_device_by_name(args_cli.teleop_device)()
@@ -41,7 +43,7 @@ class Gr1OpenMicrowaveEnvironment(ExampleEnvironmentBase):
         # Put the microwave on the packing table.
         microwave_pose = Pose(
             position_xyz=(0.4, -0.00586, 0.22773),
-            rotation_wxyz=(0.7071068, 0, 0, -0.7071068),
+            rotation_xyzw=(0, 0, -0.7071068, 0.7071068),
         )
         microwave.set_initial_pose(microwave_pose)
 
@@ -50,7 +52,7 @@ class Gr1OpenMicrowaveEnvironment(ExampleEnvironmentBase):
             object = self.asset_registry.get_asset_by_name(args_cli.object)()
             object_pose = Pose(
                 position_xyz=(0.466, -0.437, 0.154),
-                rotation_wxyz=(0.5, -0.5, 0.5, -0.5),
+                rotation_xyzw=(-0.5, 0.5, -0.5, 0.5),
             )
             object.set_initial_pose(object_pose)
             assets.append(object)

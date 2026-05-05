@@ -18,8 +18,10 @@ INSTALL_GROOT="false"
 # Whether to forcefully rebuild the docker image
 # (it takes a while to re-build, but for testing is not really necessary)
 FORCE_REBUILD=false
+# Optional suffix appended to the container name to allow multiple containers
+CONTAINER_SUFFIX=""
 
-while getopts ":d:m:e:hn:rn:Rn:vn:gn:" OPTION; do
+while getopts ":d:m:e:hn:rn:Rn:vn:gn:s:" OPTION; do
     case $OPTION in
 
         d)
@@ -49,6 +51,9 @@ while getopts ":d:m:e:hn:rn:Rn:vn:gn:" OPTION; do
             INSTALL_GROOT="true"
             DOCKER_VERSION_TAG='cuda_gr00t_gn16'
             ;;
+        s)
+            CONTAINER_SUFFIX="-${OPTARG}"
+            ;;
         h)
             script_name=$(basename "$0")
             echo "Helper script to build and IsaacLab Arena docker environment."
@@ -65,6 +70,7 @@ while getopts ":d:m:e:hn:rn:Rn:vn:gn:" OPTION; do
             echo "  -r (Force rebuilding of the docker image.)"
             echo "  -R (Force rebuilding of the docker image, without cache.)"
             echo "  -g (Install GR00T N1.6 dependencies.)"
+            echo "  -s <suffix> (Suffix appended to the container name, allowing multiple containers to run simultaneously.)"
             exit 0
             ;;
         \?)
@@ -103,8 +109,8 @@ else
 fi
 
 # Remove any exited containers
-if [ "$(docker ps -a --quiet --filter status=exited --filter name=$DOCKER_IMAGE_NAME-$DOCKER_VERSION_TAG)" ]; then
-    docker rm $DOCKER_IMAGE_NAME-$DOCKER_VERSION_TAG > /dev/null
+if [ "$(docker ps -a --quiet --filter status=exited --filter "name=^${DOCKER_IMAGE_NAME}-${DOCKER_VERSION_TAG}${CONTAINER_SUFFIX}$")" ]; then
+    docker rm $DOCKER_IMAGE_NAME-$DOCKER_VERSION_TAG$CONTAINER_SUFFIX > /dev/null
 fi
 
 add_volume_if_it_exists() {
@@ -113,12 +119,19 @@ add_volume_if_it_exists() {
     [ -d "$src" ] && echo "-v $src:$dst"
 }
 
+# Forward host SSH auth into the container when available.
+SSH_DOCKER_ARGS=()
+if [ -S "$SSH_AUTH_SOCK" ]; then
+    SSH_DOCKER_ARGS+=("-v" "$SSH_AUTH_SOCK:/ssh-agent")
+    SSH_DOCKER_ARGS+=("--env" "SSH_AUTH_SOCK=/ssh-agent")
+fi
+
 # If container is running, attach to it, otherwise start
-if [ "$( docker container inspect -f '{{.State.Running}}' $DOCKER_IMAGE_NAME'-'$DOCKER_VERSION_TAG 2>/dev/null)" = "true" ]; then
+if [ "$( docker container inspect -f '{{.State.Running}}' $DOCKER_IMAGE_NAME'-'$DOCKER_VERSION_TAG$CONTAINER_SUFFIX 2>/dev/null)" = "true" ]; then
   echo "Container already running. Attaching."
-  docker exec -it $DOCKER_IMAGE_NAME-$DOCKER_VERSION_TAG su $(id -un)
+  docker exec -it $DOCKER_IMAGE_NAME-$DOCKER_VERSION_TAG$CONTAINER_SUFFIX su $(id -un)
 else
-    DOCKER_RUN_ARGS=("--name" "$DOCKER_IMAGE_NAME-$DOCKER_VERSION_TAG"
+    DOCKER_RUN_ARGS=("--name" "$DOCKER_IMAGE_NAME-$DOCKER_VERSION_TAG$CONTAINER_SUFFIX"
                     "--privileged"
                     "--ulimit" "memlock=-1"
                     "--ulimit" "stack=-1"
@@ -132,11 +145,15 @@ else
                     $(add_volume_if_it_exists $EVAL_HOST_MOUNT_DIRECTORY /eval)
                     "-v" "$HOME/.bash_history:/home/$(id -un)/.bash_history"
                     "-v" "$HOME/.config/osmo:/home/$(id -un)/.config/osmo"
+                    "-v" "$HOME/.config/gh:/home/$(id -un)/.config/gh"
                     "-v" "$HOME/.cache:/home/$(id -un)/.cache"
                     "-v" "/tmp:/tmp"
                     "-v" "/tmp/.X11-unix:/tmp/.X11-unix:rw"
                     "-v" "/var/run/docker.sock:/var/run/docker.sock"
                     "-v" "$HOME/.Xauthority:/root/.Xauthority"
+                    "${SSH_DOCKER_ARGS[@]}"
+                    # Mount host SSL certificate store so the container trusts CA certs
+                    "-v" "/etc/ssl/certs:/etc/ssl/certs:ro"
                     "--env" "DISPLAY"
                     "--env" "ACCEPT_EULA=Y"
                     "--env" "PRIVACY_CONSENT=Y"
@@ -144,14 +161,18 @@ else
                     "--env" "DOCKER_RUN_USER_NAME=$(id -un)"
                     "--env" "DOCKER_RUN_GROUP_ID=$(id -g)"
                     "--env" "DOCKER_RUN_GROUP_NAME=$(id -gn)"
-                    # Setting envs for XR: https://isaac-sim.github.io/IsaacLab/v2.1.0/source/how-to/cloudxr_teleoperation.html#run-isaac-lab-with-the-cloudxr-runtime
-                    "--env" "XDG_RUNTIME_DIR=${WORKDIR}/submodules/IsaacLab/openxr/run"
-                    "--env" "XR_RUNTIME_JSON=${WORKDIR}/submodules/IsaacLab/openxr/share/openxr/1/openxr_cloudxr.json"
+                    # CloudXR shared volume: TeleopCore's run_cloudxr_via_docker.sh writes runtime
+                    # files to CXR_HOST_VOLUME_PATH (default ~/.cloudxr) on the host.
+                    "-v" "${CXR_HOST_VOLUME_PATH:-$HOME/.cloudxr}:/cloudxr"
+                    "--env" "XR_RUNTIME_JSON=/cloudxr/openxr_cloudxr.json"
+                    "--env" "NV_CXR_RUNTIME_DIR=/cloudxr/run"
                     # NOTE(alexmillane, 2025.07.23): This looks a bit suspect to me. We should be running
                     # as a user inside the container, not root. I've left it in for now, but we should
                     # remove it, if indeed it's not needed.
                     # "--env" "OMNI_KIT_ALLOW_ROOT=1"
                     "--env" "ISAACLAB_PATH=${WORKDIR}/submodules/IsaacLab"
+                    # Tell requests/urllib3 to use the system cert bundle
+                    "--env" "REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"
                     )
 
     # map omniverse auth or config so we have connection to the dev nucleus

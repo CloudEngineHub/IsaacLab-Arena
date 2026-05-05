@@ -6,13 +6,12 @@ This workflow covers generating a new dataset using
 
 Note that this tutorial assumes that you've completed the
 :doc:`preceding step (Teleoperation Data Collection) <step_2_teleoperation>`.
-If you do not want to do the preceding step of recording demonstrations, you can jump to
-you can download the pre-generated dataset either in
+If you do not want to do the preceding step of recording demonstrations, you can jump to either
 :ref:`step_1_annotate_demonstrations` or :ref:`step_2_generate_augmented_dataset`
-below.
+below and download the pre-provided datasets.
 
 
-**Docker Container**: Base (see :doc:`../../quickstart/docker_containers` for more details)
+**Docker Container**: Base (see :doc:`../../quickstart/installation` for more details)
 
 :docker_run_default:
 
@@ -45,7 +44,7 @@ To skip this step, you can download the pre-annotated dataset from Hugging Face 
          nvidia/Arena-GR1-Manipulation-Task \
          arena_gr1_manipulation_dataset_annotated.hdf5 \
          --repo-type dataset \
-         --revision refs/pr/2 \
+         --revision arena_v0.2_lab_v3.0 \
          --local-dir $DATASET_DIR
 
 To start the annotation process run the following command:
@@ -53,10 +52,10 @@ To start the annotation process run the following command:
 .. code-block:: bash
 
    python isaaclab_arena/scripts/imitation_learning/annotate_demos.py \
+     --viz kit \
      --device cpu \
      --input_file $DATASET_DIR/arena_gr1_manipulation_dataset_recorded.hdf5 \
      --output_file $DATASET_DIR/arena_gr1_manipulation_dataset_annotated.hdf5 \
-     --enable_pinocchio \
      --mimic \
      gr1_open_microwave
 
@@ -89,6 +88,7 @@ This step can be skipped by downloading the pre-generated dataset from Hugging F
          nvidia/Arena-GR1-Manipulation-Task \
          arena_gr1_manipulation_dataset_generated.hdf5 \
          --repo-type dataset \
+         --revision arena_v0.2_lab_v3.0 \
          --local-dir $DATASET_DIR
 
 
@@ -102,7 +102,6 @@ Generate the dataset:
      --num_envs 10 \
      --input_file $DATASET_DIR/arena_gr1_manipulation_dataset_annotated.hdf5 \
      --output_file $DATASET_DIR/arena_gr1_manipulation_dataset_generated.hdf5 \
-     --enable_pinocchio \
      --enable_cameras \
      --headless \
      --mimic \
@@ -110,6 +109,7 @@ Generate the dataset:
 
 Data generation takes 30-60 minutes depending on hardware.
 If you want to visualize the data generation process, remove ``--headless``
+and add ``--viz kit`` (before specifying the task name ``gr1_open_microwave``)
 to visualize data generation.
 
 
@@ -123,6 +123,7 @@ To do so, run the following command:
 .. code-block:: bash
 
    python isaaclab_arena/scripts/imitation_learning/replay_demos.py \
+     --viz kit \
      --device cpu \
      --enable_cameras \
      --dataset_file $DATASET_DIR/arena_gr1_manipulation_dataset_generated.hdf5 \

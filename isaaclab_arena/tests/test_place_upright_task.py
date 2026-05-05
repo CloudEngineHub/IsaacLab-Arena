@@ -5,6 +5,7 @@
 
 import gymnasium as gym
 import torch
+import traceback
 
 from isaaclab_arena.tests.utils.subprocess import run_simulation_app_function
 
@@ -14,7 +15,7 @@ HEADLESS = True
 
 def get_test_environment(dont_reset_placeable_object_pose: bool, num_envs: int):
     """Returns a scene which we use for these tests."""
-    from isaaclab_arena.assets.asset_registry import AssetRegistry
+    from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
     from isaaclab_arena.embodiments.agibot.agibot import AgibotEmbodiment
     from isaaclab_arena.embodiments.common.arm_mode import ArmMode
@@ -29,11 +30,11 @@ def get_test_environment(dont_reset_placeable_object_pose: bool, num_envs: int):
 
     asset_registry = AssetRegistry()
     background = asset_registry.get_asset_by_name("table")()
-    background.set_initial_pose(Pose(position_xyz=(0.50, 0.0, 0.625), rotation_wxyz=(0.7071, 0, 0, 0.7071)))
+    background.set_initial_pose(Pose(position_xyz=(0.50, 0.0, 0.625), rotation_xyzw=(0, 0, 0.7071, 0.7071)))
     background.object_cfg.spawn.scale = (1.0, 1.0, 0.60)
     # placeable object must have initial pose set
     mug = asset_registry.get_asset_by_name("mug")(
-        initial_pose=Pose(position_xyz=(0.05, 0.0, 0.75), rotation_wxyz=(0.7071, 0.7071, 0.0, 0.0))
+        initial_pose=Pose(position_xyz=(0.05, 0.0, 0.75), rotation_xyzw=(0.7071, 0.0, 0.0, 0.7071))
     )
     if dont_reset_placeable_object_pose:
         mug.disable_reset_pose()
@@ -83,6 +84,7 @@ def _test_place_upright_mug_single(simulation_app) -> bool:
 
     except Exception as e:
         print(f"Error: {e}")
+        traceback.print_exc()
         return False
     finally:
         env.close()
@@ -136,6 +138,7 @@ def _test_place_upright_mug_multi(simulation_app) -> bool:
 
     except Exception as e:
         print(f"Error: {e}")
+        traceback.print_exc()
         return False
     finally:
         env.close()
@@ -172,6 +175,7 @@ def _test_place_upright_mug_condition(simulation_app) -> bool:
 
     except Exception as e:
         print(f"Error: {e}")
+        traceback.print_exc()
         return False
     finally:
         env.close()

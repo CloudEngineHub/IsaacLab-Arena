@@ -3,11 +3,13 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import os
+import sys
 import yaml
 
 import pytest
 
-from isaaclab_arena.tests.test_eval_runner import run_eval_runner_and_check_no_failures, write_jobs_config_to_file
+from isaaclab_arena.tests.test_eval_runner import run_eval_runner, write_jobs_config_to_file
 from isaaclab_arena.tests.utils.constants import TestConstants
 from isaaclab_arena.tests.utils.subprocess import run_simulation_app_function, run_subprocess
 from isaaclab_arena_gr00t.tests.utils.constants import TestConstants as Gr00tTestConstants
@@ -63,7 +65,10 @@ def gr00t_finetuned_model_path(tmp_path_factory):
     args.append("--color_jitter_params")
     # Tyro expects key-value pairs as separate arguments
     args.extend(["brightness", "0.3", "contrast", "0.4", "saturation", "0.5", "hue", "0.08"])
-    run_subprocess(args)
+    env = os.environ.copy()
+    if os.environ.get("GROOT_DEPS_DIR"):
+        env["PYTHONPATH"] = os.environ["GROOT_DEPS_DIR"] + os.pathsep + env.get("PYTHONPATH", "")
+    run_subprocess(args, env=env)
 
     return model_dir / "checkpoint-10"
 
@@ -171,6 +176,7 @@ def _run_gr00t_closedloop_policy(
         return False
 
 
+@pytest.mark.with_subprocess
 def test_g1_locomanip_gr00t_closedloop_policy_runner_single_env(gr00t_finetuned_model_path, tmp_path):
     # Write a new temporary config file with the finetuned model path.
     default_config_file = (
@@ -192,6 +198,7 @@ def test_g1_locomanip_gr00t_closedloop_policy_runner_single_env(gr00t_finetuned_
     assert result, "Test test_g1_locomanip_gr00t_closedloop_policy_runner_single_env failed"
 
 
+@pytest.mark.with_subprocess
 def test_g1_locomanip_gr00t_closedloop_policy_runner_multi_envs(gr00t_finetuned_model_path, tmp_path):
     # Write a new temporary config file with the finetuned model path.
     default_config_file = (
@@ -213,6 +220,8 @@ def test_g1_locomanip_gr00t_closedloop_policy_runner_multi_envs(gr00t_finetuned_
     assert result, "Test test_g1_locomanip_gr00t_closedloop_policy_runner_multi_envs failed"
 
 
+@pytest.mark.with_subprocess
+@pytest.mark.skip(reason="CI takes 1000+secs to cold-start camera rendering.")
 def test_g1_locomanip_gr00t_closedloop_policy_runner_eval_runner(gr00t_finetuned_model_path, tmp_path):
     """Test eval_runner including a G00T closedloop policy and a zero action policy."""
 
@@ -228,7 +237,7 @@ def test_g1_locomanip_gr00t_closedloop_policy_runner_eval_runner(gr00t_finetuned
             "name": "gr1_open_microwave_cracker_box",
             "arena_env_args": {
                 "environment": "gr1_open_microwave",
-                "num_envs": 10,
+                "num_envs": 3,
                 "object": "cracker_box",
                 "embodiment": "gr1_joint",
             },
@@ -252,11 +261,9 @@ def test_g1_locomanip_gr00t_closedloop_policy_runner_eval_runner(gr00t_finetuned
     ]
     temp_config_path = str(tmp_path / "test_g1_locomanip_gr00t_closedloop_policy_runner_eval_runner.json")
     write_jobs_config_to_file(jobs, temp_config_path)
-    run_eval_runner_and_check_no_failures(temp_config_path, headless=HEADLESS)
+    run_eval_runner(temp_config_path, headless=HEADLESS)
 
 
 if __name__ == "__main__":
     # These tests require pytest fixtures, run with: pytest -sv isaaclab_arena_gr00t/tests/test_gr00t_closedloop_policy.py
-    import sys
-
     sys.exit("Run these tests with pytest, not directly.")

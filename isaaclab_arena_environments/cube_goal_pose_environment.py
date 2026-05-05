@@ -3,17 +3,19 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
+from __future__ import annotations
 
+import argparse
+from typing import TYPE_CHECKING
+
+from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
-# NOTE(alexmillane, 2025.09.04): There is an issue with type annotation in this file.
-# We cannot annotate types which require the simulation app to be started in order to
-# import, because this file is used to retrieve CLI arguments, so it must be imported
-# before the simulation app is started.
-# TODO(alexmillane, 2025.09.04): Fix this.
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
 
+@register_environment
 class CubeGoalPoseEnvironment(ExampleEnvironmentBase):
     """
     A environment for achieving the goal pose of a cube.
@@ -21,7 +23,7 @@ class CubeGoalPoseEnvironment(ExampleEnvironmentBase):
 
     name = "cube_goal_pose"
 
-    def get_env(self, args_cli: argparse.Namespace):
+    def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
 
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene
@@ -35,14 +37,14 @@ class CubeGoalPoseEnvironment(ExampleEnvironmentBase):
         object.set_initial_pose(
             Pose(
                 position_xyz=(0.1, 0.0, 0.2),
-                rotation_wxyz=(1.0, 0.0, 0.0, 0.0),
+                rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
             )
         )
         embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(enable_cameras=args_cli.enable_cameras)
         embodiment.set_initial_pose(
             Pose(
                 position_xyz=(-0.4, 0.0, 0.0),
-                rotation_wxyz=(1.0, 0.0, 0.0, 0.0),
+                rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
             )
         )
         # order: [panda_joint1, panda_joint2, panda_joint3, panda_joint4, panda_joint5, panda_joint6, panda_joint7, panda_finger_joint1, panda_finger_joint2]
@@ -63,7 +65,7 @@ class CubeGoalPoseEnvironment(ExampleEnvironmentBase):
         task = GoalPoseTask(
             object,
             target_z_range=(0.2, 1),
-            target_orientation_wxyz=(0.7071, 0.0, 0.0, 0.7071),  # yaw 90 degrees
+            target_orientation_xyzw=(0.0, 0.0, 0.7071, 0.7071),  # yaw 90 degrees
             target_orientation_tolerance_rad=0.2,
         )
 
@@ -80,5 +82,5 @@ class CubeGoalPoseEnvironment(ExampleEnvironmentBase):
     def add_cli_args(parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--object", type=str, default="dex_cube")
         parser.add_argument("--background", type=str, default="table")
-        parser.add_argument("--embodiment", type=str, default="franka")
+        parser.add_argument("--embodiment", type=str, default="franka_ik")
         parser.add_argument("--teleop_device", type=str, default=None)

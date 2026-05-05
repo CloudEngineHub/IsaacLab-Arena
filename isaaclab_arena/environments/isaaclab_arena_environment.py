@@ -29,6 +29,8 @@ class IsaacLabArenaEnvironment:
         teleop_device: TeleopDeviceBase | None = None,
         orchestrator: OrchestratorBase | None = None,
         env_cfg_callback: Callable[IsaacLabArenaManagerBasedRLEnvCfg] | None = None,
+        rl_framework_entry_point: str | None = None,
+        rl_policy_cfg: str | None = None,
     ):
         """
         Args:
@@ -39,6 +41,14 @@ class IsaacLabArenaEnvironment:
             teleop_device: The teleop device to use in the environment.
             orchestrator: The orchestrator to use in the environment.
             env_cfg_callback: A callback function that modifies the environment configuration.
+            rl_framework_entry_point: Gym kwargs key under which the RL policy config is
+                registered. This is an IsaacLab convention: each supported RL framework has a
+                fixed key that its training scripts look up via ``load_cfg_from_registry``.
+                Common values: ``"rsl_rl_cfg_entry_point"``, ``"skrl_cfg_entry_point"``,
+                ``"sb3_cfg_entry_point"``, ``"rl_games_cfg_entry_point"``. Required when
+                ``rl_policy_cfg`` is set.
+            rl_policy_cfg: Import path to the RL policy config class, e.g.
+                ``"my_module:RLPolicyCfg"``.
         """
         self.name = name
         self.scene = scene
@@ -47,3 +57,7 @@ class IsaacLabArenaEnvironment:
         self.teleop_device = teleop_device
         self.orchestrator = orchestrator
         self.env_cfg_callback = env_cfg_callback
+        if (rl_framework_entry_point is None) != (rl_policy_cfg is None):
+            raise ValueError("rl_framework_entry_point and rl_policy_cfg must both be set or both be None.")
+        self.rl_framework_entry_point = rl_framework_entry_point
+        self.rl_policy_cfg = rl_policy_cfg

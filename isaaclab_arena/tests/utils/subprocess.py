@@ -7,6 +7,7 @@ import atexit
 import os
 import subprocess
 import sys
+import traceback
 from collections.abc import Callable
 
 from isaaclab.app import AppLauncher
@@ -16,28 +17,84 @@ from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
 from isaaclab_arena.tests.conftest import PYTEST_SESSION
 from isaaclab_arena.utils.isaaclab_utils.simulation_app import get_app_launcher, teardown_simulation_app
 
+# NOTE(alexmillane): Isaac Sim makes testing complicated. During shutdown Isaac Sim will
+# terminate the surrounding pytest process with exit code 0, regardless
+# of whether the tests passed or failed.
+# To work around this, we track the failure state of the tests in two ways:
+# 1. We stash the pytest session object and set a flag when a test fails.
+# 2. We set a flag when a test fails.
+# These flags are checked in prior to closing the simulation app in _close_persistent(),
+# and we manually exit the process with the exit code 1 if tests have failed.
+
 _PERSISTENT_SIM_APP_LAUNCHER: AppLauncher | None = None
 _PERSISTENT_INIT_ARGS = None  # store (headless, enable_cameras) used at first init
+_AT_LEAST_ONE_TEST_FAILED = False
 
 
-def run_subprocess(cmd, env=None):
-    print(f"Running command: {cmd}")
+_SUBPROCESS_TIMEOUT_SEC = int(os.environ.get("ISAACLAB_ARENA_SUBPROCESS_TIMEOUT", "600"))
+
+
+def run_subprocess(
+    cmd,
+    env=None,
+    timeout_sec: int | None = None,
+    capture_output: bool = False,
+) -> subprocess.CompletedProcess | None:
+    """Run a command in a subprocess with timeout.
+
+    The child is launched with ``start_new_session=True`` so it lives in its
+    own process group.  The child-side ``SimulationAppContext`` uses this to
+    SIGTERM its entire group before ``os._exit()``, preventing orphaned Kit
+    children (shader compiler, GPU workers, …) from holding GPU resources and
+    blocking the next subprocess.
+
+    Args:
+        cmd: Command to run (list of strings).
+        env: Optional environment dict.  Defaults to inheriting the parent env.
+        timeout_sec: Per-subprocess wall-clock timeout in seconds.
+            Defaults to ``_SUBPROCESS_TIMEOUT_SEC`` (env ``ISAACLAB_ARENA_SUBPROCESS_TIMEOUT``, fallback 600).
+        capture_output: If True, capture stdout/stderr and return a
+            ``CompletedProcess``.  When False (default) output streams to
+            the parent process and the function returns None on success.
+
+    Returns:
+        ``CompletedProcess`` when *capture_output* is True, else None.
+    """
+    if timeout_sec is None:
+        timeout_sec = _SUBPROCESS_TIMEOUT_SEC
+
+    print(f"Running command (timeout={timeout_sec}s): {cmd}")
+    global _AT_LEAST_ONE_TEST_FAILED
+
+    if env is None:
+        env = os.environ.copy()
+    env["ISAACLAB_ARENA_FORCE_EXIT_ON_COMPLETE"] = "1"
+
     try:
         result = subprocess.run(
             cmd,
-            check=True,
             env=env,
-            # Don't capture output, let it flow through in real-time
-            capture_output=False,
-            text=True,
-            # Explicitly set stdout and stderr to None to use parent process's pipes
-            stdout=None,
-            stderr=None,
+            timeout=timeout_sec,
+            capture_output=capture_output,
+            text=capture_output,
+            start_new_session=True,
         )
-        print(f"Command completed with return code: {result.returncode}")
-    except subprocess.CalledProcessError as e:
-        sys.stderr.write(f"Command failed with return code {e.returncode}: {e}\n")
-        raise e
+    except subprocess.TimeoutExpired:
+        sys.stderr.write(f"\n[isaaclab-arena] Subprocess timed out after {timeout_sec}s\n")
+        _AT_LEAST_ONE_TEST_FAILED = True
+        raise subprocess.SubprocessError(f"Subprocess timed out after {timeout_sec}s: {cmd}")
+
+    print(f"Command completed with return code: {result.returncode}")
+    if result.returncode != 0:
+        sys.stderr.write(f"Command failed with return code {result.returncode}\n")
+        if capture_output and result.stderr:
+            sys.stderr.write(result.stderr)
+        _AT_LEAST_ONE_TEST_FAILED = True
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+
+    if capture_output:
+        return result
+    return None
 
 
 class _IsolatedArgv:
@@ -56,18 +113,13 @@ class _IsolatedArgv:
         sys.argv = self._old
 
 
-# Isaac Sim makes testing complicated. During shutdown Isaac Sim will
-# terminate the surrounding pytest process with exit code 0, regardless
-# of whether the tests passed or failed.
-# To work around this, we stash the session object and set a flag
-# when a test fails. This flag is checked in isaaclab_arena.tests.utils.subprocess.py
-# prior to closing the simulation app, in order to generate the correct exit code.
-
-
 def _close_persistent():
     global _PERSISTENT_SIM_APP_LAUNCHER
+    global _AT_LEAST_ONE_TEST_FAILED
     if _PERSISTENT_SIM_APP_LAUNCHER is not None:
-        if PYTEST_SESSION.tests_failed:
+        tests_failed = PYTEST_SESSION.tests_failed or _AT_LEAST_ONE_TEST_FAILED
+        print(f"Closing persistent simulation app. Tests failed: {tests_failed}")
+        if tests_failed:
             # If any test failed, exit the process with exit code 1
             # to prevent Isaac Sim from terminating the pytest process with exit code 0.
             sys.stdout.flush()
@@ -77,9 +129,7 @@ def _close_persistent():
             _PERSISTENT_SIM_APP_LAUNCHER.app.close()
 
 
-def get_persistent_simulation_app(
-    headless: bool, enable_cameras: bool = False, enable_pinocchio: bool = True
-) -> SimulationApp:
+def get_persistent_simulation_app(headless: bool, enable_cameras: bool = False) -> SimulationApp:
     """Create once, reuse forever (until process exit)."""
     global _PERSISTENT_SIM_APP_LAUNCHER, _PERSISTENT_INIT_ARGS
     # Create a new simulation app if it doesn't exist
@@ -88,7 +138,8 @@ def get_persistent_simulation_app(
         simulation_app_args = parser.parse_args([])
         simulation_app_args.headless = headless
         simulation_app_args.enable_cameras = enable_cameras
-        simulation_app_args.enable_pinocchio = enable_pinocchio
+        if not headless:
+            simulation_app_args.visualizer = ["kit"]
         with _IsolatedArgv([]):
 
             app_launcher = get_app_launcher(simulation_app_args)
@@ -101,7 +152,7 @@ def get_persistent_simulation_app(
         first_headless, first_enable_cameras = _PERSISTENT_INIT_ARGS
         if (headless != first_headless) or (enable_cameras != first_enable_cameras):
             print(
-                "[isaac-arena] Warning: persistent SimulationApp already initialized with "
+                "[isaaclab-arena] Warning: persistent SimulationApp already initialized with "
                 f"headless={first_headless}, enable_cameras={first_enable_cameras}. "
                 "Ignoring new values."
             )
@@ -112,7 +163,6 @@ def run_simulation_app_function(
     function: Callable[..., bool],
     headless: bool = True,
     enable_cameras: bool = False,
-    enable_pinocchio: bool = True,
     **kwargs,
 ) -> bool:
     """Run a simulation app in a separate process.
@@ -132,14 +182,15 @@ def run_simulation_app_function(
     # Get a persistent simulation app
     global _AT_LEAST_ONE_TEST_FAILED
     try:
-        simulation_app = get_persistent_simulation_app(
-            headless=headless, enable_cameras=enable_cameras, enable_pinocchio=enable_pinocchio
-        )
+        simulation_app = get_persistent_simulation_app(headless=headless, enable_cameras=enable_cameras)
         test_result = bool(function(simulation_app, **kwargs))
+        if not test_result:
+            _AT_LEAST_ONE_TEST_FAILED = True
         return test_result
     except Exception as e:
         print(f"Exception occurred while running the function (persistent mode): {e}")
+        traceback.print_exc()
         return False
     finally:
         # **Always** clean up the SimulationContext/timeline between tests
-        teardown_simulation_app(suppress_exceptions=True, make_new_stage=True)
+        teardown_simulation_app(suppress_exceptions=False, make_new_stage=True)

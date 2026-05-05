@@ -3,22 +3,24 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
+from __future__ import annotations
 
+import argparse
+from typing import TYPE_CHECKING
+
+from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
-# NOTE(alexmillane, 2025.09.04): There is an issue with type annotation in this file.
-# We cannot annotate types which require the simulation app to be started in order to
-# import, because this file is used to retrieve CLI arguments, so it must be imported
-# before the simulation app is started.
-# TODO(alexmillane, 2025.09.04): Fix this.
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
 
+@register_environment
 class GalileoPickAndPlaceEnvironment(ExampleEnvironmentBase):
 
     name: str = "galileo_pick_and_place"
 
-    def get_env(self, args_cli: argparse.Namespace):  # -> IsaacLabArenaEnvironment:
+    def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
         from isaaclab_arena.assets.object_reference import ObjectReference
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene
@@ -37,7 +39,7 @@ class GalileoPickAndPlaceEnvironment(ExampleEnvironmentBase):
         pick_up_object.set_initial_pose(
             Pose(
                 position_xyz=(0.55, 0.0, 0.33),
-                rotation_wxyz=(0.0, 0.0, 0.7071068, -0.7071068),
+                rotation_xyzw=(0.0, 0.7071068, -0.7071068, 0.0),
             )
         )
 

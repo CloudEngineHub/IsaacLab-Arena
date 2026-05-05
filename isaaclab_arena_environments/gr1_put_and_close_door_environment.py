@@ -3,17 +3,18 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+from __future__ import annotations
+
 import argparse
 import math
+from typing import TYPE_CHECKING
 
+from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena.tasks.common.mimic_default_params import MIMIC_DATAGEN_CONFIG_DEFAULTS
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
-# NOTE(alexmillane, 2025.09.04): There is an issue with type annotation in this file.
-# We cannot annotate types which require the simulation app to be started in order to
-# import, because this file is used to retrieve CLI arguments, so it must be imported
-# before the simulation app is started.
-# TODO(alexmillane, 2025.09.04): Fix this.
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
 
 RANDOMIZATION_HALF_RANGE_X_M = 0.0
@@ -21,6 +22,7 @@ RANDOMIZATION_HALF_RANGE_Y_M = 0.0
 RANDOMIZATION_HALF_RANGE_Z_M = 0.0
 
 
+@register_environment
 class GR1PutAndCloseDoorEnvironment(ExampleEnvironmentBase):
     """
     A sequential task environment with two subtasks for GR1 humanoid robot:
@@ -32,7 +34,7 @@ class GR1PutAndCloseDoorEnvironment(ExampleEnvironmentBase):
 
     name = "put_item_in_fridge_and_close_door"
 
-    def get_env(self, args_cli: argparse.Namespace):
+    def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
         from isaaclab.envs.mimic_env_cfg import MimicEnvCfg
         from isaaclab.utils import configclass
 
@@ -100,7 +102,7 @@ class GR1PutAndCloseDoorEnvironment(ExampleEnvironmentBase):
                 for key, value in MIMIC_DATAGEN_CONFIG_DEFAULTS.items():
                     setattr(self.datagen_config, key, value)
 
-        camera_offset = Pose(position_xyz=(0.12515, 0.0, 0.06776), rotation_wxyz=(0.57469, 0.11204, -0.17712, -0.79108))
+        camera_offset = Pose(position_xyz=(0.12515, 0.0, 0.06776), rotation_xyzw=(0.11204, -0.17712, -0.79108, 0.57469))
         embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(
             enable_cameras=args_cli.enable_cameras, camera_offset=camera_offset
         )
@@ -126,7 +128,7 @@ class GR1PutAndCloseDoorEnvironment(ExampleEnvironmentBase):
         embodiment.set_initial_pose(
             Pose(
                 position_xyz=(3.943, -1.0, 0.995),
-                rotation_wxyz=(0.7071068, 0.0, 0.0, 0.7071068),
+                rotation_xyzw=(0.0, 0.0, 0.7071068, 0.7071068),
             )
         )
 

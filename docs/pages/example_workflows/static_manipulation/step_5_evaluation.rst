@@ -4,7 +4,7 @@ Closed-Loop Policy Inference and Evaluation
 This workflow demonstrates running the trained GR00T N1.6 policy in closed-loop
 and evaluating it in Arena GR1 Open Microwave Door Task environment.
 
-**Docker Container**: Base + GR00T (see :doc:`../../quickstart/docker_containers` for more details)
+**Docker Container**: Base + GR00T (see :doc:`../imitation_learning/index` for more details)
 
 :docker_run_gr00t:
 
@@ -70,6 +70,7 @@ Test the policy in a single environment with visualization via the GUI run:
 .. code-block:: bash
 
    python isaaclab_arena/evaluation/policy_runner.py \
+     --viz kit \
      --policy_type isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy \
      --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_manip_gr00t_closedloop_config.yaml \
      --num_steps 2000 \
@@ -84,15 +85,15 @@ should be greater than 0.9, and the number of episodes should be in the range of
 Note that all these metrics are computed over the entire evaluation process, and are affected by the quality of
 post-trained policy, the quality of the dataset, and number of steps in the evaluation.
 
-.. tabs::
+.. tab-set::
 
-   .. tab:: Best Quality
+   .. tab-item:: Best Quality
 
       .. code-block:: text
 
          Metrics: {'success_rate': 0.8823529411764706, 'revolute_joint_moved_rate': 1.0, 'num_episodes': 17}
 
-   .. tab:: Low Hardware Requirements
+   .. tab-item:: Low Hardware Requirements
 
       .. code-block:: text
 
@@ -104,15 +105,16 @@ Step 2: Run Parallel Environments Evaluation
 
 Parallel evaluation of the policy in multiple parallel environments is also supported by the policy runner.
 
-.. tabs::
+.. tab-set::
 
-   .. tab:: Single GPU Evaluation
+   .. tab-item:: Single GPU Evaluation
 
       Test the policy in 10 parallel environments with visualization via the GUI run:
 
       .. code-block:: bash
 
          python isaaclab_arena/evaluation/policy_runner.py \
+           --viz kit \
            --policy_type isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy \
            --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_manip_gr00t_closedloop_config.yaml \
            --num_steps 2000 \
@@ -121,7 +123,7 @@ Parallel evaluation of the policy in multiple parallel environments is also supp
            gr1_open_microwave \
            --embodiment gr1_joint
 
-   .. tab:: Distribute Multi-GPU Evaluation
+   .. tab-item:: Distribute Multi-GPU Evaluation
 
       Test the policy in 10 parallel environments on each GPU with 2 GPUs total run:
 
@@ -163,48 +165,3 @@ than the single environment evaluation because of the parallel evaluation.
    which are realized by using the PINK IK controller.
    GR00T N1.6 policy is trained on upper body joint positions, so we use
    ``gr1_joint`` for closed-loop policy inference.
-
-
-Step 3: Remote Policy Evaluation
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-The same task can also be evaluated using a remote policy running in a
-separate process, using the generic remote policy interface described
-in :doc:`../../concepts/concept_remote_policies_design`.
-
-Start the remote policy server (for example, a GR00T-based policy) in a
-separate terminal using the provided helper script:
-
-.. code-block:: bash
-
-   bash docker/run_gr00t_server.sh \
-     # include model directory mount via -m flag, e.g. -m /models/
-     --host 127.0.0.1 \
-     --port 5555 \
-     --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_policy.Gr00tRemoteServerSidePolicy \
-     --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_manip_gr00t_closedloop_config.yaml
-
-This script builds and runs a dedicated remote policy server based on
-the generic ``remote_policy_server_runner`` and exposes the policy
-over ZeroMQ and msgpack.
-
-Then connect from the evaluation script using a client-side remote
-policy:
-
-.. code-block:: bash
-
-   python isaaclab_arena/evaluation/policy_runner.py \
-     --policy_type isaaclab_arena.policy.action_chunking_client.ActionChunkingClientSidePolicy \
-     --remote_host 127.0.0.1 \
-     --remote_port 5555 \
-     --num_steps 2000 \
-     --num_envs 10 \
-     --enable_cameras \
-     --remote_kill_on_exit \
-     gr1_open_microwave \
-     --embodiment gr1_joint
-
-With this setup, the environment and evaluation run in the base container,
-and GR00T inference runs in a separate server process, connected via the
-remote policy interface. The client-side policy depends only on Isaac Lab
-Arena; the base container does not need GR00T or its Python dependencies.

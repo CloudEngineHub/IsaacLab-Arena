@@ -10,7 +10,7 @@ If you do not want to do the preceding step of recording demonstrations, you can
 the pre-recorded datasets and jump to :ref:`sequential_step_1_annotate_demonstrations`.
 
 
-**Docker Container**: Base (see :doc:`../../quickstart/docker_containers` for more details)
+**Docker Container**: Base (see :doc:`../../quickstart/installation` for more details)
 
 :docker_run_default:
 
@@ -46,6 +46,7 @@ To skip this step, you can download the pre-annotated dataset as described below
          nvidia/Arena-GR1-Manipulation-PlaceItemCloseDoor-Task \
          ranch_bottle_into_fridge/ranch_bottle_into_fridge_annotated.hdf5 \
          --repo-type dataset \
+         --revision arena_v0.2_lab_v3.0 \
          --local-dir "$_tmp" && \
       mkdir -p "$DATASET_DIR" && \
       mv "$_tmp/ranch_bottle_into_fridge/ranch_bottle_into_fridge_annotated.hdf5" "$DATASET_DIR/" && \
@@ -56,10 +57,10 @@ To start the annotation process run the following command:
 .. code-block:: bash
 
    python isaaclab_arena/scripts/imitation_learning/annotate_demos.py \
+     --viz kit \
      --device cpu \
      --input_file $DATASET_DIR/ranch_bottle_into_fridge_recorded.hdf5 \
      --output_file $DATASET_DIR/ranch_bottle_into_fridge_annotated.hdf5 \
-     --enable_pinocchio \
      --mimic \
      put_item_in_fridge_and_close_door \
      --object ranch_dressing_hope_robolab \
@@ -101,6 +102,7 @@ This step can be skipped by downloading the pre-generated dataset as described b
          nvidia/Arena-GR1-Manipulation-PlaceItemCloseDoor-Task \
          ranch_bottle_into_fridge/ranch_bottle_into_fridge_generated_100.hdf5 \
          --repo-type dataset \
+         --revision arena_v0.2_lab_v3.0 \
          --local-dir "$_tmp" && \
       mkdir -p "$DATASET_DIR" && \
       mv "$_tmp/ranch_bottle_into_fridge/ranch_bottle_into_fridge_generated_100.hdf5" "$DATASET_DIR/" && \
@@ -116,7 +118,6 @@ Generate the dataset:
      --num_envs 10 \
      --input_file $DATASET_DIR/ranch_bottle_into_fridge_annotated.hdf5 \
      --output_file $DATASET_DIR/ranch_bottle_into_fridge_generated_100.hdf5 \
-     --enable_pinocchio \
      --enable_cameras \
      --headless \
      --mimic \
@@ -126,6 +127,7 @@ Generate the dataset:
 
 Data generation takes 30-60 minutes depending on hardware.
 If you want to visualize the data generation process, remove ``--headless``
+and add ``--viz kit`` (before specifying the task name ``put_item_in_fridge_and_close_door``)
 to visualize data generation.
 
 
@@ -139,6 +141,7 @@ To do so, run the following command:
 .. code-block:: bash
 
    python isaaclab_arena/scripts/imitation_learning/replay_demos.py \
+     --viz kit \
      --device cpu \
      --enable_cameras \
      --dataset_file $DATASET_DIR/ranch_bottle_into_fridge_generated_100.hdf5 \

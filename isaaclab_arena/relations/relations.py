@@ -14,8 +14,7 @@ from isaaclab.utils.math import euler_xyz_from_quat
 from isaaclab_arena.utils.pose import PoseRange
 
 if TYPE_CHECKING:
-    from isaaclab_arena.assets.object import Object
-    from isaaclab_arena.assets.object_reference import ObjectReference
+    from isaaclab_arena.assets.object_base import ObjectBase
 
 
 class Side(Enum):
@@ -38,13 +37,23 @@ class RelationBase:
     pass
 
 
-class Relation(RelationBase):
-    """Base class for spatial relationships between objects."""
+class UnaryRelation(RelationBase):
+    """Base class for unary spatial relations (no parent object).
 
-    def __init__(self, parent: Object | ObjectReference, relation_loss_weight: float = 1.0):
+    Unary relations constrain an object's position in world coordinates
+    without referencing another object (e.g., AtPosition, PositionLimits).
+    """
+
+    pass
+
+
+class Relation(RelationBase):
+    """Base class for binary spatial relationships between objects."""
+
+    def __init__(self, parent: ObjectBase, relation_loss_weight: float = 1.0):
         """
         Args:
-            parent: The parent asset in the relationship (Object or ObjectReference).
+            parent: The parent asset in the relationship.
             relation_loss_weight: Weight for the relationship loss function.
         """
         self.parent = parent
@@ -62,7 +71,7 @@ class NextTo(Relation):
 
     def __init__(
         self,
-        parent: Object | ObjectReference,
+        parent: ObjectBase,
         relation_loss_weight: float = 1.0,
         distance_m: float = 0.05,
         side: Side = Side.POSITIVE_X,
@@ -102,7 +111,7 @@ class On(Relation):
 
     def __init__(
         self,
-        parent: Object | ObjectReference,
+        parent: ObjectBase,
         relation_loss_weight: float = 1.0,
         clearance_m: float = 0.01,
     ):
@@ -184,20 +193,20 @@ class RandomAroundSolution(RelationBase):
     def to_pose_range_centered_at(
         self,
         position: tuple[float, float, float],
-        rotation_wxyz: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
+        rotation_xyzw: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
     ) -> PoseRange:
         """Create a PoseRange centered on the given position and rotation.
 
         Args:
             position: Center position (x, y, z) for the range.
-            rotation_wxyz: Center rotation as quaternion (w, x, y, z) for the range.
+            rotation_xyzw: Center rotation as quaternion (x, y, z, w) for the range.
                 Defaults to identity quaternion.
 
         Returns:
             PoseRange spanning ± half-extents around the position and rotation.
         """
         # Convert quaternion to euler angles (roll, pitch, yaw)
-        quat_tensor = torch.tensor([rotation_wxyz])
+        quat_tensor = torch.tensor([rotation_xyzw])
         roll, pitch, yaw = euler_xyz_from_quat(quat_tensor)
         center_roll = float(roll[0])
         center_pitch = float(pitch[0])
@@ -259,8 +268,8 @@ class RotateAroundSolution(RelationBase):
         self.pitch_rad = pitch_rad
         self.yaw_rad = yaw_rad
 
-    def get_rotation_wxyz(self) -> tuple[float, float, float, float]:
-        """Get the rotation as a quaternion (w, x, y, z).
+    def get_rotation_xyzw(self) -> tuple[float, float, float, float]:
+        """Get the rotation as a quaternion (x, y, z, w).
 
         Returns:
             Quaternion rotation converted from roll/pitch/yaw.
@@ -274,7 +283,7 @@ class RotateAroundSolution(RelationBase):
         return tuple(quat.tolist())
 
 
-class AtPosition(RelationBase):
+class AtPosition(UnaryRelation):
     """Constrains object to specific world coordinates.
 
     This is a unary relation (no parent) that pins an object's position to
@@ -313,7 +322,50 @@ class AtPosition(RelationBase):
         self.relation_loss_weight = relation_loss_weight
 
 
-def get_anchor_objects(objects: list[Object | ObjectReference]) -> list[Object | ObjectReference]:
+class PositionLimits(UnaryRelation):
+    """Constrains object position to a world-coordinate axis-aligned box.
+
+    Each axis is independently optional (None = unconstrained).
+
+    Usage:
+        mug.add_relation(PositionLimits(x_min=-0.5, x_max=0.5, y_min=-0.5, y_max=0.5))
+        mug.add_relation(PositionLimits(z_min=0.8))  # only constrain Z
+    """
+
+    def __init__(
+        self,
+        x_min: float | None = None,
+        x_max: float | None = None,
+        y_min: float | None = None,
+        y_max: float | None = None,
+        z_min: float | None = None,
+        z_max: float | None = None,
+        relation_loss_weight: float = 1.0,
+    ):
+        assert (
+            x_min is not None
+            or x_max is not None
+            or y_min is not None
+            or y_max is not None
+            or z_min is not None
+            or z_max is not None
+        ), "At least one bound (x_min, x_max, y_min, y_max, z_min, or z_max) must be specified for PositionLimits"
+        if x_min is not None and x_max is not None:
+            assert x_min < x_max, f"x_min must be less than x_max, got x_min={x_min}, x_max={x_max}"
+        if y_min is not None and y_max is not None:
+            assert y_min < y_max, f"y_min must be less than y_max, got y_min={y_min}, y_max={y_max}"
+        if z_min is not None and z_max is not None:
+            assert z_min < z_max, f"z_min must be less than z_max, got z_min={z_min}, z_max={z_max}"
+        self.x_min = x_min
+        self.x_max = x_max
+        self.y_min = y_min
+        self.y_max = y_max
+        self.z_min = z_min
+        self.z_max = z_max
+        self.relation_loss_weight = relation_loss_weight
+
+
+def get_anchor_objects(objects: list[ObjectBase]) -> list[ObjectBase]:
     """Get all anchor objects from a list of objects.
 
     Anchor objects are marked with IsAnchor() relation and serve as

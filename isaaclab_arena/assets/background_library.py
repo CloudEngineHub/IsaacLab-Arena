@@ -8,7 +8,6 @@ from typing import Any
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 
 from isaaclab_arena.assets.background import Background
-from isaaclab_arena.assets.object_library import ISAACLAB_STAGING_NUCLEUS_DIR
 from isaaclab_arena.assets.register import register_asset
 from isaaclab_arena.utils.pose import Pose
 
@@ -51,7 +50,7 @@ class KitchenBackground(LibraryBackground):
     name = "kitchen"
     tags = ["background"]
     usd_path = f"{ISAACLAB_NUCLEUS_DIR}/Arena/assets/background_library/kitchen_background/kitchen_background.usd"
-    initial_pose = Pose(position_xyz=(0.772, 3.39, -0.895), rotation_wxyz=(0.70711, 0, 0, -0.70711))
+    initial_pose = Pose(position_xyz=(0.772, 3.39, -0.895), rotation_xyzw=(0, 0, -0.70711, 0.70711))
     object_min_z = -0.2
 
     def __init__(self):
@@ -69,7 +68,7 @@ class KitchenWithOpenDrawerBackground(LibraryBackground):
     usd_path = (
         f"{ISAACLAB_NUCLEUS_DIR}/Arena/assets/background_library/kitchen_scene_teleop_v3/kitchen_scene_teleop_v3.usd"
     )
-    initial_pose = Pose(position_xyz=(0.772, 3.39, -0.895), rotation_wxyz=(0.70711, 0, 0, -0.70711))
+    initial_pose = Pose(position_xyz=(0.772, 3.39, -0.895), rotation_xyzw=(0, 0, -0.70711, 0.70711))
     object_min_z = -0.2
 
     def __init__(self):
@@ -85,7 +84,7 @@ class PackingTableBackground(LibraryBackground):
     name = "packing_table"
     tags = ["background"]
     usd_path = f"{ISAACLAB_NUCLEUS_DIR}/Arena/assets/background_library/packing_table/packing_table.usd"
-    initial_pose = Pose(position_xyz=(0.72193, -0.04727, -0.92512), rotation_wxyz=(0.70711, 0.0, 0.0, -0.70711))
+    initial_pose = Pose(position_xyz=(0.72193, -0.04727, -0.92512), rotation_xyzw=(0.0, 0.0, -0.70711, 0.70711))
     object_min_z = -0.2
 
     def __init__(self):
@@ -101,7 +100,7 @@ class GalileoBackground(LibraryBackground):
     name = "galileo"
     tags = ["background"]
     usd_path = f"{ISAACLAB_NUCLEUS_DIR}/Arena/assets/background_library/galileo_simplified/galileo_simplified.usd"
-    initial_pose = Pose(position_xyz=(4.420, 1.408, -0.795), rotation_wxyz=(1.0, 0.0, 0.0, 0.0))
+    initial_pose = Pose(position_xyz=(4.420, 1.408, -0.795), rotation_xyzw=(0.0, 0.0, 0.0, 1.0))
     object_min_z = -0.2
 
     def __init__(self):
@@ -117,7 +116,7 @@ class GalileoLocomanipBackground(LibraryBackground):
     name = "galileo_locomanip"
     tags = ["background"]
     usd_path = f"{ISAACLAB_NUCLEUS_DIR}/Arena/assets/background_library/galileo_locomanip/galileo_locomanip.usd"
-    initial_pose = Pose(position_xyz=(4.420, 1.408, -0.795), rotation_wxyz=(1.0, 0.0, 0.0, 0.0))
+    initial_pose = Pose(position_xyz=(4.420, 1.408, -0.795), rotation_xyzw=(0.0, 0.0, 0.0, 1.0))
     object_min_z = -0.2
 
     def __init__(self):
@@ -171,9 +170,10 @@ class MapleTableRobolab(LibraryBackground):
 
     name = "maple_table_robolab"
     tags = ["background", "robolab"]
-    usd_path = f"{ISAACLAB_STAGING_NUCLEUS_DIR}/Arena/assets/object_library/srl_robolab_assets/scenes/maple_table_background.usda"
+    usd_path = (
+        f"{ISAACLAB_NUCLEUS_DIR}/Arena/assets/object_library/srl_robolab_assets/scenes/maple_table_background.usda"
+    )
     object_min_z = -0.05
-    spawn_cfg_addon = {"activate_contact_sensors": True}
 
     def __init__(self):
         super().__init__()

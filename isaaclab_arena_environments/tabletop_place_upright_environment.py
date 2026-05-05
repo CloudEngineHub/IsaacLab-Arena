@@ -3,11 +3,19 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
+from __future__ import annotations
 
+import argparse
+from typing import TYPE_CHECKING
+
+from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
+
+@register_environment
 class TableTopPlaceUprightEnvironment(ExampleEnvironmentBase):
     """
     A place upright environment for the Seattle Lab table.
@@ -15,7 +23,7 @@ class TableTopPlaceUprightEnvironment(ExampleEnvironmentBase):
 
     name = "tabletop_place_upright"
 
-    def get_env(self, args_cli: argparse.Namespace):
+    def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
         import isaaclab.envs.mdp as mdp
         from isaaclab.managers import EventTermCfg as EventTerm
         from isaaclab.managers import SceneEntityCfg
@@ -52,7 +60,7 @@ class TableTopPlaceUprightEnvironment(ExampleEnvironmentBase):
         # Add the asset registry from the arena migration package
         background = self.asset_registry.get_asset_by_name(args_cli.background)()
         placeable_object = self.asset_registry.get_asset_by_name(args_cli.object)(
-            initial_pose=Pose(position_xyz=(0.05, 0.0, 0.75), rotation_wxyz=(0.0, 1.0, 0.0, 0.0))
+            initial_pose=Pose(position_xyz=(0.05, 0.0, 0.75), rotation_xyzw=(1.0, 0.0, 0.0, 0.0))
         )
         if args_cli.embodiment == "agibot":
             embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(
@@ -71,10 +79,10 @@ class TableTopPlaceUprightEnvironment(ExampleEnvironmentBase):
         embodiment.set_initial_pose(
             Pose(
                 position_xyz=(-0.60, 0.0, 0.0),
-                rotation_wxyz=(1.0, 0.0, 0.0, 0.0),
+                rotation_xyzw=(0.0, 0.0, 0.0, 1.0),
             )
         )
-        background.set_initial_pose(Pose(position_xyz=(0.50, 0.0, 0.625), rotation_wxyz=(0.7071, 0, 0, 0.7071)))
+        background.set_initial_pose(Pose(position_xyz=(0.50, 0.0, 0.625), rotation_xyzw=(0, 0, 0.7071, 0.7071)))
         background.object_cfg.spawn.scale = (1.0, 1.0, 0.60)
 
         ground_plane = self.asset_registry.get_asset_by_name("ground_plane")()
