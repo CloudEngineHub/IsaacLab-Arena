@@ -147,7 +147,7 @@ Step 4: Record with Quest 3
         --device cpu \
         --dataset_file $DATASET_DIR/arena_g1_static_apple_dataset_recorded.hdf5 \
         --num_demos 10 \
-        --num_success_steps 2 \
+        --num_success_steps 10 \
         galileo_g1_static_pick_and_place \
         --object apple_01_objaverse_robolab \
         --destination clay_plates_hot3d_robolab \
