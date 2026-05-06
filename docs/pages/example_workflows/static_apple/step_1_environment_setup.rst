@@ -52,9 +52,11 @@ who specifically want HOMIE.
            name: str = "galileo_g1_static_pick_and_place"
 
            def get_env(self, args_cli):
+               from isaaclab_arena.embodiments.common.arm_mode import ArmMode
                from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
                from isaaclab_arena.scene.scene import Scene
-               from isaaclab_arena.tasks.static_pick_and_place_task import StaticPickAndPlaceTask
+               from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
+               from isaaclab_arena.tasks.static_pick_and_place_task import StaticPickAndPlaceMimicEnvCfg
                from isaaclab_arena.utils.pose import Pose
 
                background = self.asset_registry.get_asset_by_name("galileo_locomanip")()
@@ -98,17 +100,26 @@ who specifically want HOMIE.
                    from isaaclab_arena.utils.locomanip_mimic_patch import patch_recorders
                    patch_recorders()
 
+               def _build_static_mimic_cfg(arm_mode, extra_channels):
+                   if arm_mode != ArmMode.DUAL_ARM:
+                       raise ValueError(f"Static env only supports DUAL_ARM; got {arm_mode}")
+                   return StaticPickAndPlaceMimicEnvCfg(
+                       pick_up_object_name=pick_up_object.name,
+                       destination_name=destination.name,
+                   )
+
                scene = Scene(assets=[background, pick_up_object, destination])
                return IsaacLabArenaEnvironment(
                    name=self.name,
                    embodiment=embodiment,
                    scene=scene,
-                   task=StaticPickAndPlaceTask(
+                   task=PickAndPlaceTask(
                        pick_up_object=pick_up_object,
                        destination_location=destination,
                        background_scene=background,
                        force_threshold=0.5,
                        velocity_threshold=0.1,
+                       mimic_env_cfg_factory=_build_static_mimic_cfg,
                    ),
                    teleop_device=teleop_device,
                )
@@ -173,22 +184,34 @@ no second table is needed because the destination plate sits on the same shelf a
 See :doc:`../../concepts/scene/index` for scene composition details.
 
 
-**4. Create the Static Pick and Place Task**
+**4. Create the Pick and Place Task**
 
 .. code-block:: python
 
-    task = StaticPickAndPlaceTask(
+    def _build_static_mimic_cfg(arm_mode, extra_channels):
+        if arm_mode != ArmMode.DUAL_ARM:
+            raise ValueError(f"Static env only supports DUAL_ARM; got {arm_mode}")
+        return StaticPickAndPlaceMimicEnvCfg(
+            pick_up_object_name=pick_up_object.name,
+            destination_name=destination.name,
+        )
+
+    task = PickAndPlaceTask(
         pick_up_object=pick_up_object,
         destination_location=destination,
         background_scene=background,
         force_threshold=0.5,
         velocity_threshold=0.1,
+        mimic_env_cfg_factory=_build_static_mimic_cfg,
     )
 
-``StaticPickAndPlaceTask`` is a thin subclass of ``LocomanipPickAndPlaceTask`` that inherits the
-termination logic, scene events and rewards unchanged. The only override is ``get_mimic_env_cfg``,
-which returns a Mimic config whose ``subtask_configs["body"]`` is collapsed to a single no-op subtask
-(see Step 3 for details).
+The static env uses ``PickAndPlaceTask`` directly and injects ``StaticPickAndPlaceMimicEnvCfg``
+through ``mimic_env_cfg_factory`` rather than carrying a task subclass whose only job was to
+swap which Mimic config class got returned. The cfg subclass survives because it still encodes
+the static-specific subtask shape: ``subtask_configs["body"]`` and ``subtask_configs["left"]``
+are each collapsed to a single no-op subtask (see Step 3 for the rationale). The factory closure
+also rejects non-dual-arm callers because the cfg's right-arm 3-step / collapsed-left / collapsed-body
+layout is dual-arm-only -- a single-arm caller would silently get a misshapen cfg otherwise.
 
 See :doc:`../../concepts/task/index` for task creation details.
 

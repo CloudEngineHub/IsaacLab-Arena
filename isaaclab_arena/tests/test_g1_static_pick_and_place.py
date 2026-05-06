@@ -56,7 +56,8 @@ def get_test_environment(num_envs: int):
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena.tasks.static_pick_and_place_task import StaticPickAndPlaceTask
+    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
+    from isaaclab_arena.tasks.static_pick_and_place_task import StaticPickAndPlaceMimicEnvCfg
     from isaaclab_arena.utils.pose import Pose
 
     asset_registry = AssetRegistry()
@@ -77,17 +78,29 @@ def get_test_environment(num_envs: int):
     embodiment = G1WBCAgileJointEmbodiment(enable_cameras=ENABLE_CAMERAS)
     embodiment.set_initial_pose(Pose(position_xyz=(-0.4, 0.0, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
 
+    # Inject ``StaticPickAndPlaceMimicEnvCfg`` through ``PickAndPlaceTask``'s
+    # ``mimic_env_cfg_factory`` -- mirrors the production env's pattern. ``arm_mode`` and
+    # ``extra_channels`` are accepted for signature compatibility but ignored: the static
+    # cfg's right/left/body subtask shape is hardcoded in
+    # ``StaticPickAndPlaceMimicEnvCfg.__post_init__`` rather than driven by them.
+    def _build_static_mimic_cfg(arm_mode, extra_channels):
+        return StaticPickAndPlaceMimicEnvCfg(
+            pick_up_object_name=apple.name,
+            destination_name=plate.name,
+        )
+
     scene = Scene(assets=[background, apple, plate])
-    # Use ``StaticPickAndPlaceTask`` with parent ``PickAndPlaceTask`` default termination
-    # thresholds: this test exercises termination semantics, not threshold tuning. The
-    # production env keeps the locomanip-tightened pair (0.5, 0.1) for comparable metrics;
-    # any drift in the parent defaults is caught by the parent's own tests.
-    task = StaticPickAndPlaceTask(
+    # Construct ``PickAndPlaceTask`` with parent default termination thresholds: this test
+    # exercises termination semantics, not threshold tuning. The production env keeps the
+    # locomanip-tightened pair (0.5, 0.1) for comparable metrics; any drift in the parent
+    # defaults is caught by the parent's own tests.
+    task = PickAndPlaceTask(
         pick_up_object=apple,
         destination_location=plate,
         background_scene=background,
         episode_length_s=30.0,
         task_description="Pick up the apple from the table and place it onto the plate.",
+        mimic_env_cfg_factory=_build_static_mimic_cfg,
     )
 
     isaaclab_arena_environment = IsaacLabArenaEnvironment(
@@ -223,7 +236,8 @@ def _build_static_mimic_cfg():
 
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-    from isaaclab_arena.tasks.static_pick_and_place_task import StaticPickAndPlaceTask
+    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
+    from isaaclab_arena.tasks.static_pick_and_place_task import StaticPickAndPlaceMimicEnvCfg
     from isaaclab_arena.utils.pose import Pose
 
     asset_registry = AssetRegistry()
@@ -234,10 +248,17 @@ def _build_static_mimic_cfg():
     apple.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
     plate.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
 
-    task = StaticPickAndPlaceTask(
+    def _factory(arm_mode, extra_channels):
+        return StaticPickAndPlaceMimicEnvCfg(
+            pick_up_object_name=apple.name,
+            destination_name=plate.name,
+        )
+
+    task = PickAndPlaceTask(
         pick_up_object=apple,
         destination_location=plate,
         background_scene=background,
+        mimic_env_cfg_factory=_factory,
     )
     return task.get_mimic_env_cfg(arm_mode=ArmMode.DUAL_ARM), apple, plate
 

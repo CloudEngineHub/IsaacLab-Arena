@@ -3,36 +3,29 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pick-and-place task for the static-base G1 (WBC stands the robot in place; no nav)."""
+"""Mimic env cfg for the static-base G1 (WBC stands the robot in place; no nav).
+
+There is no ``StaticPickAndPlaceTask`` class: the static env reuses
+``PickAndPlaceTask`` directly and injects this cfg through
+``PickAndPlaceTask(mimic_env_cfg_factory=...)``. See
+``galileo_g1_static_pick_and_place_environment.py`` for the closure that
+constructs ``StaticPickAndPlaceMimicEnvCfg`` with the env's pickup +
+destination names. Inheriting a task subclass purely to swap which Mimic cfg
+class gets returned was the pattern cvolk's
+``cvolk/refactor-task-mimic-channels`` branch deleted; this file follows that
+convention for the static variant.
+
+The cfg subclass ``StaticPickAndPlaceMimicEnvCfg`` survives because it still
+encodes the static-specific arm and body subtask shapes (left + body collapsed
+to single no-op subtasks) that ``PickPlaceMimicEnvCfg`` cannot yet express
+through ``mimic_subtask_boundaries`` alone -- arm-channel subtask shape is
+currently driven by ``arm_mode`` and not configurable through that dict.
+"""
 
 from isaaclab.envs.mimic_env_cfg import SubTaskConfig
 from isaaclab.utils import configclass
 
-from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-from isaaclab_arena.tasks.locomanip_pick_and_place_task import (
-    LocomanipPickAndPlaceMimicEnvCfg,
-    LocomanipPickAndPlaceTask,
-)
-
-
-class StaticPickAndPlaceTask(LocomanipPickAndPlaceTask):
-    """Locomanip pick-and-place where the robot stands in place (WBC for balance only).
-
-    Identical termination / scene / event behaviour to ``LocomanipPickAndPlaceTask``; only
-    overrides ``get_mimic_env_cfg`` to return a Mimic env cfg whose body subtask group is
-    collapsed to a single no-op (no navigation phases to segment).
-    """
-
-    def get_mimic_env_cfg(self, arm_mode: ArmMode):
-        # The G1 WBC Pink action layout is dual-arm by construction; single-arm flows
-        # would require a separate embodiment. Use ValueError (not assert) since this
-        # is API-contract validation that must hold under ``python -O`` too.
-        if arm_mode != ArmMode.DUAL_ARM:
-            raise ValueError(f"Static pick and place task only supports dual arm mode; got {arm_mode}")
-        return StaticPickAndPlaceMimicEnvCfg(
-            pick_up_object_name=self.pick_up_object.name,
-            destination_name=self.destination_location.name,
-        )
+from isaaclab_arena.tasks.locomanip_pick_and_place_task import LocomanipPickAndPlaceMimicEnvCfg
 
 
 @configclass

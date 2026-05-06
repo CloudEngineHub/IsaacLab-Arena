@@ -173,7 +173,7 @@ and the number of episodes is more than the single environment evaluation becaus
    phases that can drift off-course. The success criterion is the same contact-sensor
    termination used by the loco-manip variant (``force_threshold=0.5 N``,
    ``velocity_threshold=0.1 m/s``), filtered to contacts with the ``--destination`` asset.
-   Both values are passed to ``StaticPickAndPlaceTask`` from
+   Both values are passed to ``PickAndPlaceTask`` from
    ``isaaclab_arena_environments/galileo_g1_static_pick_and_place_environment.py``; edit the
    ``force_threshold`` / ``velocity_threshold`` kwargs there if you need a different success
    criterion for a new pick-up object or destination.
