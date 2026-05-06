@@ -6,8 +6,7 @@
 """GR00T remote closed-loop policy using GR00T's native PolicyClient.
 
 This policy connects to a GR00T policy server (launched via
-``gr00t/eval/run_gr00t_server.py``) and reuses the same observation/action
-translation pipeline as the local ``Gr00tClosedloopPolicy``.
+``gr00t/eval/run_gr00t_server.py``) and uses its own observation/action translation pipeline.
 """
 
 from __future__ import annotations
