@@ -45,6 +45,7 @@ def object_on_destination(
     velocity_below_threshold = velocity_w_norm < velocity_threshold
 
     condition_met = torch.logical_and(force_above_threshold, velocity_below_threshold)
+
     return condition_met
 
 
@@ -244,7 +245,9 @@ def goal_pose_task_termination(
 
 
 def root_height_below_minimum_multi_objects(
-    env: ManagerBasedRLEnv, minimum_height: float, asset_cfg_list: list[SceneEntityCfg] = [SceneEntityCfg("robot")]
+    env: ManagerBasedRLEnv,
+    minimum_height: float,
+    asset_cfg_list: list[SceneEntityCfg] = [SceneEntityCfg("robot")],
 ) -> torch.Tensor:
     """Terminate when any asset's root height is below the minimum height.
 

@@ -25,7 +25,7 @@ Environment Description
            def get_env(self, args_cli: argparse.Namespace):
                from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
                from isaaclab_arena.scene.scene import Scene
-               from isaaclab_arena.tasks.g1_locomanip_pick_and_place_task import G1LocomanipPickAndPlaceTask
+               from isaaclab_arena.tasks.locomanip_pick_and_place_task import LocomanipPickAndPlaceTask
                from isaaclab_arena.utils.pose import Pose, PoseRange
 
                background = self.asset_registry.get_asset_by_name("galileo_locomanip")()
@@ -53,7 +53,7 @@ Environment Description
                embodiment.set_initial_pose(Pose(position_xyz=(0.0, 0.18, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
 
                scene = Scene(assets=[background, pick_up_object, blue_sorting_bin])
-               task = G1LocomanipPickAndPlaceTask(pick_up_object, blue_sorting_bin, background),
+               task = LocomanipPickAndPlaceTask(pick_up_object, blue_sorting_bin, background),
 
                isaaclab_arena_environment = IsaacLabArenaEnvironment(
                    name=self.name,
@@ -82,7 +82,7 @@ Step-by-Step Breakdown
 Here, we're selecting the specific pieces we need for our locomanipulation task: the Galileo arena as our background environment,
 an object to pick up, a blue sorting bin as our goal location, and the G1 embodiment.
 The ``AssetRegistry`` and ``DeviceRegistry`` have been initialized in the ``ExampleEnvironmentBase`` class.
-See :doc:`../../concepts/concept_assets_design` for details on asset architecture.
+See :doc:`../../concepts/scene/concept_assets_design` for details on asset architecture.
 
 
 **2. Position the Objects**
@@ -116,20 +116,20 @@ currently set manually to create an achievable task.
     scene = Scene(assets=[background, pick_up_object, blue_sorting_bin])
 
 Now we bring everything together into a IsaacLab-Arena scene.
-See :doc:`../../concepts/concept_scene_design` for scene composition details.
+See :doc:`../../concepts/scene/index` for scene composition details.
 
 **4. Create the Locomanip Pick and Place Task**
 
 .. code-block:: python
 
-    task = G1LocomanipPickAndPlaceTask(pick_up_object, blue_sorting_bin, background),
+    task = LocomanipPickAndPlaceTask(pick_up_object, blue_sorting_bin, background),
 
-The ``G1LocomanipPickAndPlaceTask`` encapsulates the task's goal of the
+The ``LocomanipPickAndPlaceTask`` encapsulates the task's goal of the
 environment: pick up the specified object and place it in the blue sorting bin.
 
 The task knows about the key objects involved (what to pick, where to place it, and the environment context) and will
 provide rewards, compute observations, and determine when the episode should end.
-See :doc:`../../concepts/concept_tasks_design` for task creation details.
+See :doc:`../../concepts/task/index` for task creation details.
 
 **5. Create the IsaacLab Arena Environment**
 
@@ -145,7 +145,7 @@ See :doc:`../../concepts/concept_tasks_design` for task creation details.
 
 Finally, we assemble all the pieces into a complete, runnable environment. The ``IsaacLabArenaEnvironment`` is the
 top-level container that connects your embodiment (the robot), the scene (the world) and the task (the objective).
-See :doc:`../../concepts/concept_environment_design` for environment composition details.
+See :doc:`../../concepts/concept_overview` for environment composition details.
 
 
 Step 1: Download a test dataset

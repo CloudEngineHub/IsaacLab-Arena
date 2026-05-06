@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import argparse
 
+from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
 
+@register_environment
 class NISTAssembledGearMeshOSCEnvironment(ExampleEnvironmentBase):
     """NIST gear insertion using OSC torque control and assembly-style observations."""
 

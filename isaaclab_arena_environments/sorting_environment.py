@@ -3,11 +3,19 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
+from __future__ import annotations
 
+import argparse
+from typing import TYPE_CHECKING
+
+from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
+
+@register_environment
 class TableTopSortCubesEnvironment(ExampleEnvironmentBase):
     """
     A pick and place environment for the Seattle Lab table.
@@ -15,7 +23,7 @@ class TableTopSortCubesEnvironment(ExampleEnvironmentBase):
 
     name = "tabletop_sort_cubes"
 
-    def get_env(self, args_cli: argparse.Namespace):
+    def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
 
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene

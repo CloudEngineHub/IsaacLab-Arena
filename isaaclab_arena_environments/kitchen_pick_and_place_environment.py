@@ -3,22 +3,24 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import argparse
+from __future__ import annotations
 
+import argparse
+from typing import TYPE_CHECKING
+
+from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
-# NOTE(alexmillane, 2025.09.04): There is an issue with type annotation in this file.
-# We cannot annotate types which require the simulation app to be started in order to
-# import, because this file is used to retrieve CLI arguments, so it must be imported
-# before the simulation app is started.
-# TODO(alexmillane, 2025.09.04): Fix this.
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
 
 
+@register_environment
 class KitchenPickAndPlaceEnvironment(ExampleEnvironmentBase):
 
     name: str = "kitchen_pick_and_place"
 
-    def get_env(self, args_cli: argparse.Namespace):  # -> IsaacLabArenaEnvironment:
+    def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
         from isaaclab_arena.assets.object_reference import ObjectReference
         from isaaclab_arena.assets.object_set import RigidObjectSet
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
@@ -37,13 +39,7 @@ class KitchenPickAndPlaceEnvironment(ExampleEnvironmentBase):
         embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(enable_cameras=args_cli.enable_cameras)
 
         # Validate mutually exclusive object arguments
-        has_object = args_cli.object is not None
         has_object_set = args_cli.object_set is not None and len(args_cli.object_set) > 0
-        assert has_object or has_object_set, "Must specify either --object or --object_set."
-        assert not (has_object and has_object_set), (
-            "Cannot specify both --object and --object_set. Use --object for a single object, "
-            "or --object_set for multiple objects across environments where --num_envs == len(object_set)."
-        )
 
         # Create the pick-up object: Either a single object or a set of objects
         if has_object_set:
@@ -83,14 +79,17 @@ class KitchenPickAndPlaceEnvironment(ExampleEnvironmentBase):
     @staticmethod
     def add_cli_args(parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
-            "--object", type=str, default=None, help="Single object to pick up. Mutually exclusive with --object_set."
+            "--object",
+            type=str,
+            default="cracker_box",
+            help="Single object to pick up. Overridden by --object_set if provided.",
         )
         parser.add_argument(
             "--object_set",
             nargs="+",
             type=str,
             default=None,
-            help="Multiple objects to spawn across environments. Mutually exclusive with --object.",
+            help="Multiple objects to spawn across environments. Overrides --object.",
         )
         parser.add_argument("--embodiment", type=str, default="franka_ik")
         # NOTE(alexmillane, 2025.09.04): We need a teleop device argument in order

@@ -3,7 +3,7 @@ Welcome to Isaac Lab Arena!
 
 .. warning::
    This is the latest version of IsaacLab Arena. It contains the newest features but may not be fully tested yet.
-   For the tested version, please refer to the `release/0.1.1 branch <https://isaac-sim.github.io/IsaacLab-Arena/release/0.1.1/index.html>`_.
+   For the tested version, please refer to the `release/0.2.0 branch <https://isaac-sim.github.io/IsaacLab-Arena/release/0.2.0/index.html>`_.
 
 ``Isaac Lab Arena`` extends `Isaac Lab <https://isaac-sim.github.io/IsaacLab/main/index.html>`_
 to simplify the creation of task/environment libraries.
@@ -199,19 +199,30 @@ TABLE OF CONTENTS
    pages/quickstart/first_experiments/index
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :caption: Arena in Your Repo
 
-   pages/arena_in_your_repo/external_installation
-   pages/arena_in_your_repo/external_environments
-   pages/arena_in_your_repo/external_tasks_and_embodiments
+   pages/arena_in_your_repo/index
 
 .. toctree::
    :maxdepth: 1
    :caption: Example Workflows
 
+   pages/example_workflows/example_environments
    pages/example_workflows/imitation_learning/index
    pages/example_workflows/reinforcement_learning_workflows/index
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Concepts
+
+   pages/concepts/concept_overview
+   pages/concepts/concept_environment_compilation
+   pages/concepts/scene/index
+   pages/concepts/task/index
+   pages/concepts/embodiment/index
+   pages/concepts/concept_object_placement
+   pages/concepts/policy/index
 
 .. toctree::
    :maxdepth: 1
@@ -219,37 +230,12 @@ TABLE OF CONTENTS
 
    pages/advanced/private_omniverse
    pages/advanced/assets_management
-   pages/advanced/gr00t_server_client
    pages/quickstart/jupyter_notebooks
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Policy Evaluation
-
-   pages/policy_evaluation/index
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Concepts
-
-   pages/concepts/concept_overview
-   pages/concepts/concept_environment_design
-   pages/concepts/concept_embodiment_design
-   pages/concepts/concept_tasks_design
-   pages/concepts/concept_sequential_tasks_design
-   pages/concepts/concept_scene_design
-   pages/concepts/concept_metrics_design
-   pages/concepts/concept_teleop_devices_design
-   pages/concepts/concept_environment_compilation
-   pages/concepts/concept_assets_design
-   pages/concepts/concept_affordances_design
-   pages/concepts/concept_object_placement
-   pages/concepts/concept_policy_design
-   pages/concepts/concept_remote_policies_design
-
+   pages/advanced/gr00t_server_client
 
 .. toctree::
    :maxdepth: 1
    :caption: References
 
    pages/references/release_notes
+   pages/references/citing_us
