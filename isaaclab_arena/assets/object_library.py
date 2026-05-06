@@ -3,15 +3,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import isaaclab.sim as sim_utils
-
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
-if TYPE_CHECKING:
-    from isaaclab_arena.assets.hdr_image import HDRImage
 from isaaclab.assets import RigidObjectCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
@@ -96,11 +90,14 @@ class CrackerBox(LibraryObject):
 
 @register_asset
 class GearsAndBase(LibraryObject):
-    """NIST gear base with SDF collision (local USD, gear_base as root prim)."""
+    """NIST gear base with SDF collision (gear_base as root prim)."""
 
     name = "gears_and_base"
     tags = ["object"]
-    usd_path = str(_REPO_ROOT / "assets" / "gearbase_and_gears_gearbase_root.usd")
+    usd_path = (
+        "omniverse://isaac-dev.ov.nvidia.com/Isaac/IsaacLab/Arena/assets/object_library/NIST/"
+        "gearbase_and_gears_gearbase_root.usd"
+    )
 
     spawn_cfg_addon = {
         "rigid_props": sim_utils.RigidBodyPropertiesCfg(
@@ -132,7 +129,7 @@ class MediumNistGear(LibraryObject):
 
     name = "medium_nist_gear"
     tags = ["object"]
-    usd_path = str(_REPO_ROOT / "assets" / "gear_medium.usd")
+    usd_path = "omniverse://isaac-dev.ov.nvidia.com/Isaac/IsaacLab/Arena/assets/object_library/NIST/gear_medium.usd"
 
     spawn_cfg_addon = {
         "rigid_props": sim_utils.RigidBodyPropertiesCfg(
@@ -161,7 +158,9 @@ class NistBoardAssembled(LibraryObject):
 
     name = "nist_board_assembled"
     tags = ["nist", "object"]
-    usd_path = str(_REPO_ROOT / "assets" / "nist_board_assembled.usd")
+    usd_path = (
+        "omniverse://isaac-dev.ov.nvidia.com/Isaac/IsaacLab/Arena/assets/object_library/NIST/nist_board_assembled.usd"
+    )
     spawn_cfg_addon = {
         "rigid_props": sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
@@ -191,7 +190,7 @@ class NistGearBase(LibraryObject):
 
     name = "nist_gear_base"
     tags = ["nist", "object"]
-    usd_path = str(_REPO_ROOT / "assets" / "gear_base.usd")
+    usd_path = "omniverse://isaac-dev.ov.nvidia.com/Isaac/IsaacLab/Arena/assets/object_library/NIST/gear_base.usd"
     spawn_cfg_addon = {
         "rigid_props": sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
