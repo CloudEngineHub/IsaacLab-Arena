@@ -28,7 +28,6 @@ import pytest
 
 from isaaclab_arena_gr00t.tests.utils.constants import TestConstants as Gr00tTestConstants
 
-
 NUM_ENVS = 2
 ORIGINAL_HEIGHT = 480
 ORIGINAL_WIDTH = 640
@@ -58,10 +57,7 @@ def policy_config_yaml(tmp_path):
     """Write a copy of the g1 locomanip test config with model_path set to a
     HuggingFace repo id so ``Gr00tClosedloopPolicyConfig.__post_init__`` passes
     without a real checkpoint on disk (the remote policy never loads it)."""
-    src = (
-        Gr00tTestConstants.test_data_dir
-        + "/test_g1_locomanip_lerobot/test_g1_locomanip_gr00t_closedloop_config.yaml"
-    )
+    src = Gr00tTestConstants.test_data_dir + "/test_g1_locomanip_lerobot/test_g1_locomanip_gr00t_closedloop_config.yaml"
     with open(src) as f:
         cfg = yaml.safe_load(f)
     cfg["model_path"] = "nvidia/GR00T-N1.6-3B"  # HF id passes _is_huggingface_model_id
@@ -74,9 +70,7 @@ def policy_config_yaml(tmp_path):
 @pytest.fixture
 def synthetic_observation():
     """Env-shaped torch obs: one ego camera + 43 joint positions per env."""
-    rgb = torch.randint(
-        0, 255, (NUM_ENVS, ORIGINAL_HEIGHT, ORIGINAL_WIDTH, NUM_CHANNELS), dtype=torch.uint8
-    )
+    rgb = torch.randint(0, 255, (NUM_ENVS, ORIGINAL_HEIGHT, ORIGINAL_WIDTH, NUM_CHANNELS), dtype=torch.uint8)
     joint_pos = torch.randn(NUM_ENVS, NUM_SIM_JOINTS, dtype=torch.float32)
     return {
         "camera_obs": {"robot_head_cam_rgb": rgb},
