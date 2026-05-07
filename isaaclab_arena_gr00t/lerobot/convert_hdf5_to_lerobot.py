@@ -506,7 +506,8 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig):
                 trajectory=trajectory, episode_index=episode_index, index_start=total_length, config=config
             )
         except Exception as e:
-            print(f"Error loading trajectory {trajectory_id}: {e}")
+            print(f"Error loading trajectory {trajectory_id}: {e!r}")
+            traceback.print_exc()
             continue
 
         # 2.1. Save the episode data
