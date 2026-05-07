@@ -8,41 +8,7 @@ from dataclasses import MISSING
 from isaaclab.envs.mimic_env_cfg import MimicEnvCfg, SubTaskConfig
 from isaaclab.utils import configclass
 
-from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
-
-
-class LocomanipPickAndPlaceTask(PickAndPlaceTask):
-
-    def __init__(
-        self,
-        pick_up_object: Asset,
-        destination_location: Asset,
-        background_scene: Asset,
-        episode_length_s: float | None = None,
-        task_description: str | None = None,
-        force_threshold: float = 1.0,
-        velocity_threshold: float = 0.1,
-    ):
-        super().__init__(
-            pick_up_object=pick_up_object,
-            destination_location=destination_location,
-            background_scene=background_scene,
-            episode_length_s=episode_length_s,
-            task_description=task_description,
-            force_threshold=force_threshold,
-            velocity_threshold=velocity_threshold,
-        )
-
-    def get_mimic_env_cfg(self, arm_mode: ArmMode):
-        # NOTE(alexmillane, 2026.04.10): Currently we only support dual arm mode for
-        # the Locomanip pick and place task.
-        assert arm_mode == ArmMode.DUAL_ARM, "Locomanip pick and place task only supports dual arm mode"
-        return LocomanipPickAndPlaceMimicEnvCfg(
-            pick_up_object_name=self.pick_up_object.name,
-            destination_name=self.destination_location.name,
-        )
 
 
 @configclass
@@ -53,10 +19,16 @@ class LocomanipPickAndPlaceMimicEnvCfg(MimicEnvCfg):
 
     pick_up_object_name: str = MISSING
     destination_name: str = MISSING
+    arm_mode: ArmMode = ArmMode.DUAL_ARM
 
     def __post_init__(self):
         # post init of parents
         super().__post_init__()
+
+        # Hardcoded right + left + body subtask shapes assume both arms drive the demo;
+        # other arm modes would silently produce a cfg with the wrong subtask shape.
+        if self.arm_mode != ArmMode.DUAL_ARM:
+            raise ValueError(f"LocomanipPickAndPlaceMimicEnvCfg only supports ArmMode.DUAL_ARM; got {self.arm_mode}")
 
         self.datagen_config.name = f"locomanip_pick_and_place_{self.pick_up_object_name}_to_{self.destination_name}_D0"
         self.datagen_config.generation_guarantee = True

@@ -69,7 +69,8 @@ class GalileoG1LocomanipPickAndPlaceEnvironment(ExampleEnvironmentBase):
     def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene
-        from isaaclab_arena.tasks.locomanip_pick_and_place_task import LocomanipPickAndPlaceTask
+        from isaaclab_arena.tasks.locomanip_pick_and_place_task import LocomanipPickAndPlaceMimicEnvCfg
+        from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
         from isaaclab_arena.utils.pose import Pose, PoseRange
 
         background = self.asset_registry.get_asset_by_name("galileo_locomanip")()
@@ -141,12 +142,19 @@ class GalileoG1LocomanipPickAndPlaceEnvironment(ExampleEnvironmentBase):
                 destination_name=destination.name,
             )
 
+        def _build_locomanip_mimic_cfg(arm_mode):
+            return LocomanipPickAndPlaceMimicEnvCfg(
+                pick_up_object_name=pick_up_object.name,
+                destination_name=destination.name,
+                arm_mode=arm_mode,
+            )
+
         scene = Scene(assets=[background, pick_up_object, destination])
         isaaclab_arena_environment = IsaacLabArenaEnvironment(
             name=self.name,
             embodiment=embodiment,
             scene=scene,
-            task=LocomanipPickAndPlaceTask(
+            task=PickAndPlaceTask(
                 pick_up_object,
                 destination,
                 background,
@@ -154,6 +162,7 @@ class GalileoG1LocomanipPickAndPlaceEnvironment(ExampleEnvironmentBase):
                 task_description=task_description,
                 force_threshold=0.5,
                 velocity_threshold=0.1,
+                mimic_env_cfg_factory=_build_locomanip_mimic_cfg,
             ),
             teleop_device=teleop_device,
             env_cfg_callback=env_cfg_callback,
