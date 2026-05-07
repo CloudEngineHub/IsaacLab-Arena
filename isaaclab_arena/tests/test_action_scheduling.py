@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import torch
 
-from isaaclab_arena.policy.action_scheduling import ActionChunkScheduler, SyncedBatchActionScheduler
-
 NUM_ENVS = 2
 ACTION_CHUNK_LENGTH = 4
 ACTION_HORIZON = 4
@@ -28,7 +26,7 @@ def _make_chunk() -> torch.Tensor:
     )
 
 
-def _load_chunk(scheduler: ActionChunkScheduler, chunk: torch.Tensor) -> None:
+def _load_chunk(scheduler, chunk: torch.Tensor) -> None:
     """Manually seed the scheduler's buffer (ActionChunkScheduler.get_action steps but does not fetch)."""
     scheduler.current_action_chunk[:] = chunk
     scheduler.current_action_index[:] = 0
@@ -39,6 +37,8 @@ def _load_chunk(scheduler: ActionChunkScheduler, chunk: torch.Tensor) -> None:
 
 
 def test_action_chunk_scheduler_steps_through_loaded_chunk():
+    from isaaclab_arena.policy.action_scheduling import ActionChunkScheduler
+
     scheduler = ActionChunkScheduler(NUM_ENVS, ACTION_CHUNK_LENGTH, ACTION_HORIZON, ACTION_DIM, device="cpu")
     chunk = _make_chunk()
     _load_chunk(scheduler, chunk)
@@ -60,6 +60,8 @@ def test_action_chunk_scheduler_steps_through_loaded_chunk():
 
 
 def test_action_chunk_scheduler_reset_marks_all_envs_for_refetch():
+    from isaaclab_arena.policy.action_scheduling import ActionChunkScheduler
+
     scheduler = ActionChunkScheduler(NUM_ENVS, ACTION_CHUNK_LENGTH, ACTION_HORIZON, ACTION_DIM, device="cpu")
     _load_chunk(scheduler, _make_chunk())
     assert not scheduler.env_requires_new_chunk.any()
@@ -72,6 +74,8 @@ def test_action_chunk_scheduler_reset_marks_all_envs_for_refetch():
 
 
 def test_action_chunk_scheduler_reset_per_env_only_touches_selected_envs():
+    from isaaclab_arena.policy.action_scheduling import ActionChunkScheduler
+
     scheduler = ActionChunkScheduler(NUM_ENVS, ACTION_CHUNK_LENGTH, ACTION_HORIZON, ACTION_DIM, device="cpu")
     _load_chunk(scheduler, _make_chunk())
 
@@ -85,6 +89,8 @@ def test_action_chunk_scheduler_reset_per_env_only_touches_selected_envs():
 
 
 def test_synced_batch_scheduler_fetches_only_when_all_envs_need_a_chunk():
+    from isaaclab_arena.policy.action_scheduling import SyncedBatchActionScheduler
+
     scheduler = SyncedBatchActionScheduler(NUM_ENVS, ACTION_CHUNK_LENGTH, ACTION_HORIZON, ACTION_DIM, device="cpu")
     chunk = _make_chunk()
     hold = torch.full((NUM_ENVS, ACTION_DIM), -1.0)
@@ -113,6 +119,8 @@ def test_synced_batch_scheduler_fetches_only_when_all_envs_need_a_chunk():
 
 
 def test_synced_batch_scheduler_holds_waiting_envs_after_partial_reset():
+    from isaaclab_arena.policy.action_scheduling import SyncedBatchActionScheduler
+
     scheduler = SyncedBatchActionScheduler(NUM_ENVS, ACTION_CHUNK_LENGTH, ACTION_HORIZON, ACTION_DIM, device="cpu")
     chunk = _make_chunk()
     hold = torch.tensor([[10.0, 11.0, 12.0], [20.0, 21.0, 22.0]])
