@@ -1,7 +1,7 @@
 G1 Static Apple-to-Plate Task
 =============================
 
-This example demonstrates the complete workflow for the **G1 static (no-navigation) apple-to-plate task** in Isaac Lab - Arena, covering environment setup and validation, teleoperation data collection (OpenXR with Meta Quest 3 or Pico 4 Ultra), data generation, policy post-training, and closed-loop evaluation.
+This example demonstrates the complete workflow for the **G1 static (no-navigation) apple-to-plate task** in Isaac Lab - Arena, covering environment setup and validation, teleoperation data collection (OpenXR with Meta Quest 3 or Pico 4 Ultra), policy post-training directly on the recorded teleop demonstrations, and closed-loop evaluation.
 
 This workflow is the no-locomotion sibling of the :doc:`G1 Loco-Manipulation Box Pick and Place Task <../locomanipulation/index>`. The robot stands in place using the same Whole Body Controller (WBC) for balance, but the destination plate sits on the *same* shelf as the apple — within arm's reach — so the lower body never moves. If you want a tabletop manipulation surface for upper-body data collection without the complexity of full-body locomotion, this is the workflow to use.
 
@@ -30,7 +30,7 @@ balances the standing pose (no navigation, no squat), and PinkIK drives the uppe
    * - **Embodiment**
      - Unitree G1 (29 DOF humanoid with Whole Body Controller, balance only)
    * - **Interop**
-     - Isaac Lab Mimic
+     - LeRobot dataset format (direct from teleop HDF5)
    * - **Scene**
      - Galileo Lab Environment (single shelf, no second table)
    * - **Manipulated Object(s)**
@@ -55,9 +55,15 @@ Workflow
 --------
 
 This tutorial covers the pipeline between creating an environment, collecting teleoperation
-demonstrations, generating training data, fine-tuning a policy (GR00T N1.6), and evaluating the
-policy in closed-loop. Follow the steps in order from teleoperation through closed-loop evaluation;
-each step consumes the artifacts produced by the previous one.
+demonstrations, fine-tuning a policy (GR00T N1.6) directly on the recorded HDF5, and evaluating
+the policy in closed-loop. Follow the steps in order from environment setup through closed-loop
+evaluation; each step consumes the artifacts produced by the previous one.
+
+.. note::
+
+   This workflow trains directly from teleop recordings. The recorded HDF5 from 
+   :doc:`step_2_teleoperation` is converted to LeRobot format and
+   fed straight into post-training in :doc:`step_3_policy_training`.
 
 Prerequisites
 ^^^^^^^^^^^^^
@@ -83,9 +89,8 @@ Follow the following steps to complete the workflow:
 
 - :doc:`step_1_environment_setup`
 - :doc:`step_2_teleoperation`
-- :doc:`step_3_data_generation`
-- :doc:`step_4_policy_training`
-- :doc:`step_5_evaluation`
+- :doc:`step_3_policy_training`
+- :doc:`step_4_evaluation`
 
 
 .. toctree::
@@ -94,6 +99,5 @@ Follow the following steps to complete the workflow:
 
    step_1_environment_setup
    step_2_teleoperation
-   step_3_data_generation
-   step_4_policy_training
-   step_5_evaluation
+   step_3_policy_training
+   step_4_evaluation

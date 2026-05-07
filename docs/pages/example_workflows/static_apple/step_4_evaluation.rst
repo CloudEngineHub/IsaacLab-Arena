@@ -17,7 +17,7 @@ Once inside the container, set the dataset and models directories.
     export MODELS_DIR=/models/isaaclab_arena/static_apple_tutorial
 
 Note that this tutorial assumes that you've completed the
-:doc:`preceding step (Policy Training) <step_4_policy_training>`.
+:doc:`preceding step (Policy Training) <step_3_policy_training>`.
 
 
 Step 1: Run Single Environment Evaluation
@@ -146,22 +146,22 @@ and the number of episodes is more than the single environment evaluation becaus
 .. note::
 
    Note that the embodiment used in closed-loop policy inference is ``g1_wbc_agile_joint``, which is
-   different from ``g1_wbc_agile_pink`` used in data generation.
+   different from ``g1_wbc_agile_pink`` used during teleoperation recording.
    This is because during tele-operation, the upper body is controlled via target end-effector poses,
    which are realized by using the PINK IK controller, and the lower body is controlled via the AGILE
    WBC policy. GR00T N1.6 policy is trained on upper body joint positions and lower body WBC policy
    inputs, so we use the joint-control twin (``g1_wbc_agile_joint``) for closed-loop policy inference
-   -- it shares the AGILE lower-body backend with the data-generation embodiment, just bypasses
+   -- it shares the AGILE lower-body backend with the recording embodiment, just bypasses
    PinkIK.
 
 .. note::
 
-   The example policy was trained on datasets generated with CPU-based physics, so the
+   The example policy was trained on datasets recorded with CPU-based physics, so the
    single-environment command above uses ``--device cpu`` to keep evaluation physics aligned
    with training and give per-episode reproducibility. The parallel commands instead use
    ``--device cuda`` for throughput -- this swaps the physics backend, so individual episodes
    are no longer bit-for-bit reproducible against the CPU-trained policy, but aggregate
-   success-rate metrics over many episodes remain informative. If your dataset was generated on
+   success-rate metrics over many episodes remain informative. If your dataset was recorded on
    GPU physics, prefer ``--device cuda`` for both single and parallel runs to keep evaluation
    physics aligned with training.
 

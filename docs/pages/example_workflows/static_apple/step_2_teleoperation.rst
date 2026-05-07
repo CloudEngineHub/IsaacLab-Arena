@@ -162,7 +162,8 @@ Step 4: Record with the headset device
       # Record demonstrations with OpenXR teleop
       python isaaclab_arena/scripts/imitation_learning/record_demos.py \
         --viz kit \
-        --device cpu \
+        --device cuda \
+        --enable_cameras \
         --dataset_file $DATASET_DIR/arena_g1_static_apple_dataset_recorded.hdf5 \
         --num_demos 10 \
         --num_success_steps 10 \
@@ -187,13 +188,6 @@ Step 4: Record with the headset device
    #. Move it laterally over the plate.
    #. Open the gripper to release the apple onto the plate.
 
-   These four phases also map directly onto the two annotation boundaries you'll mark in
-   :doc:`step_3_data_generation`: ``S`` press #1 (``idle_right``) lands at the transition between
-   phase 1 and phase 2 (gripper still open above the apple, just before closing); ``S`` press #2
-   (``grasp_and_idle_right``) lands at the transition between phase 2 and phase 3 (apple lifted
-   clear of the shelf, just before the lateral move). See *What you'll do during annotation* in
-   the data-generation page for the full timeline.
-
    Demos for this task should be noticeably shorter than the loco-manip variant (no walk / turn /
    squat phases), so you can collect 10 successful demos in around 5--10 minutes once the pipeline is
    running.
@@ -202,8 +196,9 @@ Step 4: Record with the headset device
 .. note::
 
    Releasing a small round object onto a flat plate is noticeably harder than dropping a box into a
-   bin. Keep the release height low and the orientation stable — successful demonstrations make
-   Isaac Lab Mimic's job much easier in :doc:`step_3_data_generation`.
+   bin. Keep the release height low and the orientation stable — these recordings are fed directly
+   into LeRobot conversion and policy post-training (see :doc:`step_3_policy_training`), so demo
+   quality is what the policy learns from.
 
 
 Step 5: Replay Recorded Demos (Optional)

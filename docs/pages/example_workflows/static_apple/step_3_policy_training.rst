@@ -1,8 +1,10 @@
 Policy Post-Training
 --------------------
 
-This workflow covers post-training an example policy using the generated dataset,
-here we use `GR00T N1.6 <https://github.com/NVIDIA/Isaac-GR00T>`_ as the base model.
+This workflow covers post-training an example policy directly on the **teleoperated
+demonstrations** exported in HDF5 from :doc:`step_2_teleoperation`, with
+`GR00T N1.6 <https://github.com/NVIDIA/Isaac-GR00T>`_ as the base model. The recorded HDF5 is converted to LeRobot format and
+fed straight into post-training.
 
 **Docker Container**: Base + GR00T (see :doc:`../imitation_learning/index` for more details)
 
@@ -15,15 +17,27 @@ Once inside the container, set the dataset and models directories.
     export DATASET_DIR=/datasets/isaaclab_arena/static_apple_tutorial
     export MODELS_DIR=/models/isaaclab_arena/static_apple_tutorial
 
-Note that this tutorial assumes that you've completed the
-:doc:`preceding step (Data Generation) <step_3_data_generation>`.
+This page assumes you have a successful recording at
+``$DATASET_DIR/arena_g1_static_apple_dataset_recorded.hdf5`` from
+:doc:`step_2_teleoperation`.
 
 
 Step 1: Convert to LeRobot Format
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 GR00T N1.6 requires the dataset to be in LeRobot format.
-We provide a script to convert from the IsaacLab Mimic generated HDF5 dataset to LeRobot format.
+We provide a script to convert the Arena teleop HDF5 export directly to LeRobot format.
+
+.. caution::
+
+   ``isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py`` expects each episode to include
+   ego RGB under ``observations/camera_obs/robot_head_cam_rgb`` (see ``pov_cam_name_sim`` in the
+   YAML). Before bulk collection, run the conversion once on a short recording to confirm the
+   layout matches.
+
+Edit ``isaaclab_arena_gr00t/lerobot/config/g1_static_apple_config.yaml`` so ``hdf5_name`` matches
+your recorded file (``arena_g1_static_apple_dataset_recorded.hdf5``) and ``data_root`` matches
+``$DATASET_DIR``.
 
 Convert the HDF5 dataset to LeRobot format for policy post-training:
 
@@ -33,7 +47,7 @@ Convert the HDF5 dataset to LeRobot format for policy post-training:
      --yaml_file isaaclab_arena_gr00t/lerobot/config/g1_static_apple_config.yaml
 
 
-This creates a folder ``$DATASET_DIR/arena_g1_static_apple_dataset_generated/lerobot`` containing parquet files with states/actions,
+This creates a folder ``$DATASET_DIR/arena_g1_static_apple_dataset_recorded/lerobot`` containing parquet files with states/actions,
 MP4 camera recordings, and dataset metadata.
 
 The converter is controlled by a config file at ``isaaclab_arena_gr00t/lerobot/config/g1_static_apple_config.yaml``.
@@ -45,7 +59,7 @@ The converter is controlled by a config file at ``isaaclab_arena_gr00t/lerobot/c
 
       # Input/Output paths
       data_root: /datasets/isaaclab_arena/static_apple_tutorial
-      hdf5_name: "arena_g1_static_apple_dataset_generated.hdf5"
+      hdf5_name: "arena_g1_static_apple_dataset_recorded.hdf5"
 
       # Task description
       language_instruction: "Pick up the apple from the shelf and place it onto the plate on the same shelf next to it."
@@ -98,7 +112,7 @@ To post-train the policy, run the following command
 .. code-block:: bash
 
    PYTHONPATH=$GROOT_DEPS_DIR:$PYTHONPATH python -m torch.distributed.run --nproc_per_node=8 --standalone submodules/Isaac-GR00T/gr00t/experiment/launch_finetune.py \
-   --dataset_path=$DATASET_DIR/arena_g1_static_apple_dataset_generated/lerobot \
+   --dataset_path=$DATASET_DIR/arena_g1_static_apple_dataset_recorded/lerobot \
    --output_dir=$MODELS_DIR \
    --modality_config_path=isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_config.py \
    --global_batch_size=96 \
