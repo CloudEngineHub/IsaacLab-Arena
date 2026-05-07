@@ -34,18 +34,6 @@ def patch_recorders():
                 ).navigate_cmd
         return "actions", actions
 
-    # Record post step action observation group
-    class PostStepFlatPolicyObservationsRecorder(RecorderTerm):
-        def record_post_step(self):
-            return "action", self._env.obs_buf["action"]
-
-    @configclass
-    class PostStepFlatPolicyObservationsRecorderCfg(RecorderTermCfg):
-        class_type: type[RecorderTerm] = PostStepFlatPolicyObservationsRecorder
-
-    ActionStateRecorderManagerCfg.record_post_step_flat_policy_observations = (
-        PostStepFlatPolicyObservationsRecorderCfg()
-    )
     PreStepActionsRecorder.record_pre_step = record_pre_step
 
     print("\nPatched recorders for G1 Locomanip Mimic\n")
