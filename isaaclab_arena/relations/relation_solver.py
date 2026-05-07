@@ -41,7 +41,10 @@ class RelationSolver:
         """
         self.params = params or RelationSolverParams()
         # High slope (vs 10-100 for relation strategies) so overlap avoidance dominates.
-        self._no_collision_strategy = NoCollisionLossStrategy(slope=10000.0)
+        self._no_collision_strategy = NoCollisionLossStrategy(
+            slope=10000.0,
+            xy_only=self.params.no_collision_xy_only,
+        )
         self._last_loss_history: list[float] = []
         self._last_position_history: list = []
         self._last_loss_per_env: torch.Tensor | None = None
@@ -148,18 +151,18 @@ class RelationSolver:
             child_pos = state.get_position(child)
             child_bbox = child.get_bounding_box().to(device)
 
-            # Against all anchors
-            for anchor in anchor_objects:
-                anchor_world_bbox = anchor.get_world_bounding_box().to(device)
-                loss = self._no_collision_strategy.compute_loss(
-                    clearance_m=self.params.clearance_m,
-                    child_pos=child_pos,
-                    child_bbox=child_bbox,
-                    parent_world_bbox=anchor_world_bbox,
-                )
-                if debug:
-                    print(f"  [NoOverlap] {child.name} vs {anchor.name}: loss={loss.mean().item():.6f}")
-                total_loss = total_loss + loss
+            if self.params.no_collision_include_anchors:
+                for anchor in anchor_objects:
+                    anchor_world_bbox = anchor.get_world_bounding_box().to(device)
+                    loss = self._no_collision_strategy.compute_loss(
+                        clearance_m=self.params.clearance_m,
+                        child_pos=child_pos,
+                        child_bbox=child_bbox,
+                        parent_world_bbox=anchor_world_bbox,
+                    )
+                    if debug:
+                        print(f"  [NoOverlap] {child.name} vs {anchor.name}: loss={loss.mean().item():.6f}")
+                    total_loss = total_loss + loss
 
             # Against other non-anchors (unique pairs, both directions)
             for j in range(i + 1, len(non_anchor_objects)):

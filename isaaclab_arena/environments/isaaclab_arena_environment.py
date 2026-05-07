@@ -31,6 +31,7 @@ class IsaacLabArenaEnvironment:
         env_cfg_callback: Callable[IsaacLabArenaManagerBasedRLEnvCfg] | None = None,
         rl_framework_entry_point: str | None = None,
         rl_policy_cfg: str | None = None,
+        force_convex_hull: bool = False,
     ):
         """
         Args:
@@ -49,6 +50,8 @@ class IsaacLabArenaEnvironment:
                 ``rl_policy_cfg`` is set.
             rl_policy_cfg: Import path to the RL policy config class, e.g.
                 ``"my_module:RLPolicyCfg"``.
+            force_convex_hull: If True, replace ``convexDecomposition`` with
+                ``convexHull`` on mesh-collision prims after scene creation.
         """
         self.name = name
         self.scene = scene
@@ -57,6 +60,7 @@ class IsaacLabArenaEnvironment:
         self.teleop_device = teleop_device
         self.orchestrator = orchestrator
         self.env_cfg_callback = env_cfg_callback
+        self.force_convex_hull = force_convex_hull
         if (rl_framework_entry_point is None) != (rl_policy_cfg is None):
             raise ValueError("rl_framework_entry_point and rl_policy_cfg must both be set or both be None.")
         self.rl_framework_entry_point = rl_framework_entry_point

@@ -165,6 +165,27 @@ def test_no_collision_loss_volume_formula():
     assert torch.isclose(loss, torch.tensor(expected_loss), rtol=1e-4)
 
 
+def test_no_collision_xy_only_ignores_z_separation():
+    """XY-only no-collision still penalizes XY overlap when objects are separated in Z."""
+    box_a = _create_box("box_a", size=0.2)
+    box_b = _create_box("box_b", size=0.2)
+    volume_strategy = NoCollisionLossStrategy(slope=10.0)
+    xy_strategy = NoCollisionLossStrategy(slope=10.0, xy_only=True)
+
+    child_pos = torch.tensor([0.0, 0.0, 1.0])
+    parent_world_bbox = box_b.get_bounding_box().translated((0.05, 0.05, 0.0))
+
+    volume_loss = volume_strategy.compute_loss(
+        clearance_m=0.0, child_pos=child_pos, child_bbox=box_a.bounding_box, parent_world_bbox=parent_world_bbox
+    )
+    xy_loss = xy_strategy.compute_loss(
+        clearance_m=0.0, child_pos=child_pos, child_bbox=box_a.bounding_box, parent_world_bbox=parent_world_bbox
+    )
+
+    assert torch.isclose(volume_loss, torch.tensor(0.0), atol=1e-5)
+    assert xy_loss > 0.0
+
+
 # =============================================================================
 # RelationSolver with built-in no-overlap tests
 # =============================================================================
@@ -281,6 +302,31 @@ def test_relation_solver_no_collision_same_inputs_reproducible():
 
     assert result1[box_a1] == result2[box_a2], "box_a positions should match"
     assert result1[box_b1] == result2[box_b2], "box_b positions should match"
+
+
+def test_relation_solver_skips_anchor_no_collision_by_default():
+    """Anchor surfaces should not contribute to built-in no-collision by default."""
+    table = _create_table()
+    table.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
+    table.add_relation(IsAnchor())
+    box = _create_box("box")
+    box.add_relation(On(table, clearance_m=0.01))
+    objects = [table, box]
+    initial_positions = [{table: (0.0, 0.0, 0.0), box: (0.4, 0.4, 0.11)}]
+
+    fixed_solver = RelationSolver(
+        RelationSolverParams(max_iters=0, no_collision_xy_only=True, no_collision_include_anchors=False)
+    )
+    fixed_solver.solve(objects=objects, initial_positions=initial_positions)
+
+    origin_main_solver = RelationSolver(
+        RelationSolverParams(max_iters=0, no_collision_xy_only=True, no_collision_include_anchors=True)
+    )
+    origin_main_solver.solve(objects=objects, initial_positions=initial_positions)
+
+    assert fixed_solver.last_loss_per_env is not None
+    assert origin_main_solver.last_loss_per_env is not None
+    assert origin_main_solver.last_loss_per_env.item() > fixed_solver.last_loss_per_env.item()
 
 
 def test_no_collision_loss_multi_env_shape_and_values():
