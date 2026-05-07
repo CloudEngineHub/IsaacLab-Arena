@@ -11,6 +11,7 @@ import torch
 from collections.abc import Callable
 
 
+# TODO(xinjieyao, 2026-05-06): to be recycled
 class ActionChunkingState:
     """Holds chunk buffer, per-env index, and refill flag; provides get_action(fetch_chunk_fn).
 

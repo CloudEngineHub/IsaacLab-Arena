@@ -5,3 +5,4 @@
 
 from .action_chunk_scheduler import ActionChunkScheduler
 from .action_scheduler import ActionScheduler
+from .synced_batch_action_scheduler import SyncedBatchActionScheduler

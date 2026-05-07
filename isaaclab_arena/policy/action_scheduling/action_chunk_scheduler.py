@@ -51,12 +51,21 @@ class ActionChunkScheduler(ActionScheduler):
         self._total_envs_needed: int = 0
         self._per_env_fetch_count = torch.zeros(num_envs, dtype=torch.int64, device=device)
 
-    def get_action(self, fetch_action_tensor_fn: Callable[[], torch.Tensor]) -> torch.Tensor:
+    def get_action(
+        self,
+        fetch_action_tensor_fn: Callable[[], torch.Tensor],
+        hold_action: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """Return one action per env, refilling the chunk when needed.
 
         fetch_action_tensor_fn() must return a tensor of shape (num_envs, horizon, action_dim)
         with horizon >= action_horizon.
+
+        ``hold_action`` is part of the base ``ActionScheduler`` API for schedulers that
+        need a fallback for waiting envs (e.g. ``SyncedBatchActionScheduler``); this
+        scheduler doesn't have a waiting state so the argument is accepted and ignored.
         """
+        del hold_action
         assert self.current_action_index.min() >= 0, "At least one env's action index is less than 0"
         assert (
             self.current_action_index.max() < self.action_chunk_length

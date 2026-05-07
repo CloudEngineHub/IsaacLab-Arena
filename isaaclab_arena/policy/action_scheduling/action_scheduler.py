@@ -21,11 +21,18 @@ class ActionScheduler(ABC):
     """
 
     @abstractmethod
-    def get_action(self, fetch_action_tensor_fn: Callable[[], torch.Tensor]) -> torch.Tensor:
+    def get_action(
+        self,
+        fetch_action_tensor_fn: Callable[[], torch.Tensor],
+        hold_action: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """Return one action per env for the current timestep.
 
         Args:
             fetch_action_tensor_fn: Callable that queries the action and returns an action tensor.
+            hold_action: Optional ``(num_envs, action_dim)`` tensor used by schedulers
+                that need a fallback action for envs waiting on others. Schedulers that don't
+                need it accept ``None`` and ignore the argument so callers can use a uniform call site.
 
         Returns:
             Per-step action tensor of shape ``(num_envs, action_dim)``.
