@@ -1,13 +1,135 @@
 Closed-Loop Policy Inference and Evaluation
 -------------------------------------------
 
-This workflow demonstrates running the trained GR00T N1.6 policy in closed-loop
-and evaluating it in the Arena G1 Static Apple-to-Plate Task environment.
+This workflow demonstrates running the finetuned GR00T N1.7 policy in closed-loop and evaluating it
+in the Arena G1 Static Apple-to-Plate Task environment using Arena's **server-client (remote-policy)
+architecture**. The server hosts the finetuned checkpoint outside the Arena container; the Arena
+container runs the simulation and queries the server over ZeroMQ.
+
+Note that this tutorial assumes that you've completed the
+:doc:`preceding step (Policy Training) <step_3_policy_training>`.
 
 
-**Docker Container**: Base + GR00T (see :doc:`../imitation_learning/index` for more details)
+Step 0: Start the GR00T policy server
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-:docker_run_gr00t:
+The server runs Arena's ``Gr00tRemoteServerSidePolicy`` (which wraps GR00T's ``Gr00tPolicy``) on top
+of the standalone Isaac-GR00T (N1.7) Python package. Start it **before** launching the client; the
+client will connect on first inference.
+
+The server is configured by a YAML at
+``isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml``.
+
+.. dropdown:: Server-side configuration file (``g1_static_apple_gr00t_closedloop_config.yaml``)
+   :animate: fade-in
+
+   .. code-block:: yaml
+
+      # Path on the server's filesystem (or container mount) to the finetuned checkpoint dir.
+      model_path: /models/isaaclab_arena/static_apple_tutorial/static_apple_n17_finetune/checkpoint-20000
+      language_instruction: "Pick up the apple from the shelf and place it onto the plate on the same shelf next to it."
+
+      # Must match the diffusion head's action_horizon baked into the finetuned checkpoint.
+      action_horizon: 40
+
+      # The N1.7 finetune from step 3 uses the NEW_EMBODIMENT tag.
+      embodiment_tag: NEW_EMBODIMENT
+
+      video_backend: decord
+      modality_config_path: isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_config.py
+
+      policy_joints_config_path: isaaclab_arena_gr00t/embodiments/g1/gr00t_43dof_joint_space.yaml
+      action_joints_config_path: isaaclab_arena_gr00t/embodiments/g1/43dof_joint_space.yaml
+      state_joints_config_path: isaaclab_arena_gr00t/embodiments/g1/43dof_joint_space.yaml
+
+      # Number of actions to execute before next inference; <= action_horizon.
+      action_chunk_length: 40
+      pov_cam_name_sim: "robot_head_cam_rgb"
+
+      task_mode_name: g1_locomanipulation
+
+.. tab-set::
+
+   .. tab-item:: Option A: Standalone Isaac-GR00T venv (recommended)
+
+      Run the server **outside Docker** in the standalone Isaac-GR00T (N1.7) venv created in
+      :doc:`index`. This is the simplest setup once the venv exists: no container build, no
+      ``GROOT_DEPS_DIR`` overrides, just the standalone repo's own dependencies.
+
+      From the host, with ``$ISAAC_GR00T_DIR`` and Arena both checked out:
+
+      .. code-block:: bash
+
+         # 1) Make sure the venv is up to date and includes Arena's server-side modules.
+         #    The standalone repo provides gr00t; Arena provides gr00t_remote_policy + the
+         #    ZeroMQ entrypoint. Add Arena to PYTHONPATH (Arena does not have to be installed).
+         cd /path/to/IsaacLab-Arena
+         export PYTHONPATH=$PWD:${PYTHONPATH:-}
+
+         # 2) Activate (or `uv run`) the standalone Isaac-GR00T venv. It already has the
+         #    N1.7 `gr00t` package installed.
+         cd $ISAAC_GR00T_DIR
+
+         # 3) Launch Arena's server with the static-apple YAML.
+         uv run python -m isaaclab_arena.remote_policy.remote_policy_server_runner \
+           --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_policy.Gr00tRemoteServerSidePolicy \
+           --policy_config_yaml_path /path/to/IsaacLab-Arena/isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml \
+           --host 0.0.0.0 \
+           --port 5555
+
+      The server prints ``[Gr00tRemoteServerSidePolicy] config:`` followed by the parsed YAML and
+      then ``listening on 0.0.0.0:5555`` once it is ready for clients.
+
+   .. tab-item:: Option B: GR00T Server Docker (with N1.7 mount)
+
+      The Arena GR00T server image (``docker/Dockerfile.gr00t_server``) bakes Arena's pinned
+      ``submodules/Isaac-GR00T`` (N1.6). To serve an N1.7 finetune from this image, mount your
+      standalone N1.7 checkout and override ``PYTHONPATH`` so the in-container ``import gr00t``
+      resolves to the N1.7 source.
+
+      .. code-block:: bash
+
+         export ISAAC_GR00T_DIR=/path/to/Isaac-GR00T   # standalone N1.7 checkout
+         export MODELS_DIR=$HOME/models                # contains static_apple_n17_finetune/
+
+         # The server YAML's `model_path` must reference the in-container path. Adjust the
+         # YAML so it points at /models/... rather than the host path.
+         bash docker/run_gr00t_server.sh \
+           -m $MODELS_DIR \
+           -- \
+           --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_policy.Gr00tRemoteServerSidePolicy \
+           --policy_config_yaml_path /workspace/isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml
+
+      To override the bundled N1.6 ``gr00t`` package with the standalone N1.7 source you mounted,
+      add a bind mount for the standalone repo and prepend it to ``PYTHONPATH`` inside the
+      container. The simplest way is to invoke ``docker run`` directly instead of
+      ``run_gr00t_server.sh``:
+
+      .. code-block:: bash
+
+         docker run --rm --gpus all --net host \
+           -v $MODELS_DIR:/models \
+           -v $ISAAC_GR00T_DIR:/opt/isaac_gr00t_n17 \
+           -e PYTHONPATH=/opt/isaac_gr00t_n17:/workspace \
+           gr00t_policy_server:latest \
+           --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_policy.Gr00tRemoteServerSidePolicy \
+           --policy_config_yaml_path /workspace/isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml
+
+      This is more brittle than Option A because the standalone N1.7 venv's wheel set may not
+      match exactly what the Arena server image installs. Prefer Option A unless you specifically
+      need the containerized server.
+
+
+Step 1: Run Single Environment Evaluation (Arena container)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+With the server from Step 0 running, launch the Arena client. The client side does not need any
+GR00T dependencies — it talks to the server over ZeroMQ — so it runs in the standard **Base**
+Arena container.
+
+**Docker Container**: Base (see :doc:`../../quickstart/installation` for more details)
+
+:docker_run_default:
 
 Once inside the container, set the dataset and models directories.
 
@@ -16,46 +138,17 @@ Once inside the container, set the dataset and models directories.
     export DATASET_DIR=/datasets/isaaclab_arena/static_apple_tutorial
     export MODELS_DIR=/models/isaaclab_arena/static_apple_tutorial
 
-Note that this tutorial assumes that you've completed the
-:doc:`preceding step (Policy Training) <step_3_policy_training>`.
-
-
-Step 1: Run Single Environment Evaluation
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-We first run the policy in a single environment with visualization via the GUI.
-
-The GR00T model is configured by a config file at ``isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml``.
-
-.. dropdown:: Configuration file (``g1_static_apple_gr00t_closedloop_config.yaml``):
-   :animate: fade-in
-
-   .. code-block:: yaml
-
-      model_path: /models/isaaclab_arena/static_apple_tutorial/checkpoint-20000
-      language_instruction: "Pick up the apple from the shelf and place it onto the plate on the same shelf next to it."
-      action_horizon: 50
-      embodiment_tag: NEW_EMBODIMENT
-      video_backend: decord
-      modality_config_path: isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_config.py
-
-      policy_joints_config_path: isaaclab_arena_gr00t/embodiments/g1/gr00t_43dof_joint_space.yaml
-      action_joints_config_path: isaaclab_arena_gr00t/embodiments/g1/43dof_joint_space.yaml
-      state_joints_config_path: isaaclab_arena_gr00t/embodiments/g1/43dof_joint_space.yaml
-
-      action_chunk_length: 50
-      pov_cam_name_sim: "robot_head_cam_rgb"
-
-      task_mode_name: g1_locomanipulation
-
-Test the policy in a single environment with visualization via the GUI run:
+We first run the policy in a single environment with visualization via the GUI. Replace
+``<SERVER_HOST>`` below with the IP of the host running Step 0 (or ``localhost`` if it is the same
+machine).
 
 .. code-block:: bash
 
    python isaaclab_arena/evaluation/policy_runner.py \
      --viz kit \
-     --policy_type isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy \
-     --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml \
+     --policy_type isaaclab_arena.policy.action_chunking_client.ActionChunkingClientSidePolicy \
+     --remote_host <SERVER_HOST> \
+     --remote_port 5555 \
      --num_steps 600 \
      --device cpu \
      --enable_cameras \
@@ -66,6 +159,12 @@ Test the policy in a single environment with visualization via the GUI run:
 
 Note the lower ``--num_steps`` (600 instead of 1500): with no walking phase, a successful
 static apple-to-plate episode runs for roughly half as long as the loco-manip variant.
+
+Note also that the client command does **not** take a ``--policy_config_yaml_path``: the YAML is
+the server's concern, and the client only needs to know where the server is listening. The
+``ActionChunkingClientSidePolicy`` does the action-chunking buffering on the client side; it expects
+the server to emit fixed-length chunks of ``action_horizon`` actions per inference (40 here), which
+the YAML configures.
 
 The evaluation should produce the following output on the console at the end of the evaluation.
 You should see similar metrics.
@@ -80,7 +179,8 @@ by the quality of post-trained policy, the quality of the dataset, and number of
 Step 2: Run Parallel Environments Evaluation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Parallel evaluation of the policy in multiple parallel environments is also supported by the policy runner.
+Parallel evaluation of the policy in multiple parallel environments is also supported by the policy
+runner. Both tabs below assume the server from Step 0 is still running.
 
 .. tab-set::
 
@@ -92,13 +192,13 @@ Parallel evaluation of the policy in multiple parallel environments is also supp
 
          python isaaclab_arena/evaluation/policy_runner.py \
            --viz kit \
-           --policy_type isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy \
-           --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml \
+           --policy_type isaaclab_arena.policy.action_chunking_client.ActionChunkingClientSidePolicy \
+           --remote_host <SERVER_HOST> \
+           --remote_port 5555 \
            --num_steps 500 \
            --num_envs 5 \
            --enable_cameras \
            --device cuda \
-           --policy_device cuda  \
            galileo_g1_static_pick_and_place \
            --object apple_01_objaverse_robolab \
            --destination clay_plates_hot3d_robolab \
@@ -111,13 +211,13 @@ Parallel evaluation of the policy in multiple parallel environments is also supp
       .. code-block:: bash
 
          python -m torch.distributed.run --nnodes=1 --nproc_per_node=2 isaaclab_arena/evaluation/policy_runner.py \
-           --policy_type isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy \
-           --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml \
+           --policy_type isaaclab_arena.policy.action_chunking_client.ActionChunkingClientSidePolicy \
+           --remote_host <SERVER_HOST> \
+           --remote_port 5555 \
            --num_steps 500 \
            --num_envs 5 \
            --enable_cameras \
            --device cuda \
-           --policy_device cuda  \
            --distributed \
            --headless \
            galileo_g1_static_pick_and_place \
@@ -125,6 +225,11 @@ Parallel evaluation of the policy in multiple parallel environments is also supp
            --destination clay_plates_hot3d_robolab \
            --embodiment g1_wbc_agile_joint
 
+.. note::
+
+   With the server-client architecture, ``--policy_device`` is no longer a client-side concern: the
+   server places the policy on its own GPU (``policy_device`` in the server YAML, default
+   ``cuda``). The client's ``--device`` flag still controls Arena's physics backend.
 
 And during the evaluation, you should see the following output on the console at the end of the evaluation
 indicating which environments are terminated (task-specific conditions like the apple is placed onto the plate,
@@ -149,9 +254,9 @@ and the number of episodes is more than the single environment evaluation becaus
    different from ``g1_wbc_agile_pink`` used during teleoperation recording.
    This is because during tele-operation, the upper body is controlled via target end-effector poses,
    which are realized by using the PINK IK controller, and the lower body is controlled via the AGILE
-   WBC policy. GR00T N1.6 policy is trained on upper body joint positions and lower body WBC policy
-   inputs, so we use the joint-control twin (``g1_wbc_agile_joint``) for closed-loop policy inference
-   -- it shares the AGILE lower-body backend with the recording embodiment, just bypasses
+   WBC policy. The GR00T N1.7 policy is trained on upper body joint positions and lower body WBC
+   policy inputs, so we use the joint-control twin (``g1_wbc_agile_joint``) for closed-loop policy
+   inference -- it shares the AGILE lower-body backend with the recording embodiment, just bypasses
    PinkIK.
 
 .. note::
@@ -177,3 +282,20 @@ and the number of episodes is more than the single environment evaluation becaus
    ``isaaclab_arena_environments/galileo_g1_static_pick_and_place_environment.py``; edit the
    ``force_threshold`` / ``velocity_threshold`` kwargs there if you need a different success
    criterion for a new pick-up object or destination.
+
+.. note::
+
+   **Common server-client failure modes.**
+
+   - ``ValueError: Invalid action shape, expected: 23, received: 50.`` — the client's embodiment
+     expects a 23-D PinkIK action, but the server is returning a 43-DoF joint chunk. Make sure the
+     client uses ``--embodiment g1_wbc_agile_joint`` (joint twin), not
+     ``g1_wbc_agile_pink`` (PinkIK twin).
+   - ``ModuleNotFoundError: No module named '...gr00t_remote_closedloop_policy'`` on the client
+     side — the client's ``--policy_type`` is wrong. The remote-policy *client* is
+     ``isaaclab_arena.policy.action_chunking_client.ActionChunkingClientSidePolicy``;
+     ``Gr00tRemoteServerSidePolicy`` is the **server-side** class.
+   - Action shape mismatch on the server (``Action key 'left_arm''s horizon must be 50. Got 40``)
+     — the action modality registered at training time disagrees with the modality registered at
+     server boot. Re-finetune at the same horizon or update the modality config to match the
+     checkpoint (see the caution in :doc:`step_3_policy_training`).

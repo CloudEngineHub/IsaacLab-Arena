@@ -24,6 +24,15 @@ plate are placed on the *same* shelf so the robot never needs to drive its base 
 holds the standing pose. The ``g1_wbc_pink`` embodiment is still accepted as an override for users
 who specifically want HOMIE.
 
+.. note::
+
+   **Recording vs. evaluation embodiment.** Teleoperation in :doc:`step_2_teleoperation` uses the
+   default ``g1_wbc_agile_pink`` (PinkIK + AGILE), while closed-loop policy evaluation in
+   :doc:`step_4_evaluation` uses ``g1_wbc_agile_joint`` (direct joint control + AGILE). Both share
+   the same AGILE lower-body backend; the ``_joint`` twin just bypasses PinkIK at inference because
+   the policy is trained on the joint-space targets that PinkIK *produced* during recording. This
+   matters for finetuning: see :doc:`step_3_policy_training` for the rationale.
+
 .. dropdown:: The Galileo G1 Static Pick-and-Place Environment
    :animate: fade-in
 
