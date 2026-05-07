@@ -26,22 +26,14 @@ def _make_chunk() -> torch.Tensor:
     )
 
 
-def _load_chunk(scheduler, chunk: torch.Tensor) -> None:
-    """Manually seed the scheduler's buffer (ActionChunkScheduler.get_action steps but does not fetch)."""
-    scheduler.current_action_chunk[:] = chunk
-    scheduler.current_action_index[:] = 0
-    scheduler.env_requires_new_chunk[:] = False
-
-
 # ----------------------------- ActionChunkScheduler ------------------------------
 
 
-def test_action_chunk_scheduler_steps_through_loaded_chunk():
+def test_action_chunk_scheduler_steps_through_chunk_and_refetches_when_exhausted():
     from isaaclab_arena.policy.action_scheduling import ActionChunkScheduler
 
     scheduler = ActionChunkScheduler(NUM_ENVS, ACTION_CHUNK_LENGTH, ACTION_HORIZON, ACTION_DIM, device="cpu")
     chunk = _make_chunk()
-    _load_chunk(scheduler, chunk)
 
     fetch_calls = 0
 
@@ -50,20 +42,42 @@ def test_action_chunk_scheduler_steps_through_loaded_chunk():
         fetch_calls += 1
         return chunk
 
-    for k in range(ACTION_CHUNK_LENGTH):
+    # First call: every env needs a chunk → exactly one fetch, action is slot 0.
+    a0 = scheduler.get_action(fetch)
+    assert fetch_calls == 1
+    assert a0.shape == (NUM_ENVS, ACTION_DIM)
+    torch.testing.assert_close(a0, chunk[:, 0])
+
+    # Subsequent calls within the chunk step without re-fetching.
+    for k in range(1, ACTION_CHUNK_LENGTH):
         action = scheduler.get_action(fetch)
-        assert action.shape == (NUM_ENVS, ACTION_DIM)
         torch.testing.assert_close(action, chunk[:, k])
+    assert fetch_calls == 1
 
     # After draining the chunk, every env should be flagged as needing a new one.
     assert scheduler.env_requires_new_chunk.all()
+
+    # Next call triggers a new fetch.
+    scheduler.get_action(fetch)
+    assert fetch_calls == 2
 
 
 def test_action_chunk_scheduler_reset_marks_all_envs_for_refetch():
     from isaaclab_arena.policy.action_scheduling import ActionChunkScheduler
 
     scheduler = ActionChunkScheduler(NUM_ENVS, ACTION_CHUNK_LENGTH, ACTION_HORIZON, ACTION_DIM, device="cpu")
-    _load_chunk(scheduler, _make_chunk())
+    chunk = _make_chunk()
+
+    fetch_calls = 0
+
+    def fetch() -> torch.Tensor:
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return chunk
+
+    # Drive one step so the buffer is populated and indices have advanced.
+    scheduler.get_action(fetch)
+    assert fetch_calls == 1
     assert not scheduler.env_requires_new_chunk.any()
 
     scheduler.reset()
@@ -72,17 +86,39 @@ def test_action_chunk_scheduler_reset_marks_all_envs_for_refetch():
     assert (scheduler.current_action_index == -1).all()
     assert (scheduler.current_action_chunk == 0.0).all()
 
+    # Next get_action must trigger a refetch.
+    scheduler.get_action(fetch)
+    assert fetch_calls == 2
+
 
 def test_action_chunk_scheduler_reset_per_env_only_touches_selected_envs():
     from isaaclab_arena.policy.action_scheduling import ActionChunkScheduler
 
     scheduler = ActionChunkScheduler(NUM_ENVS, ACTION_CHUNK_LENGTH, ACTION_HORIZON, ACTION_DIM, device="cpu")
-    _load_chunk(scheduler, _make_chunk())
+    chunk = _make_chunk()
+
+    fetch_calls = 0
+
+    def fetch() -> torch.Tensor:
+        nonlocal fetch_calls
+        fetch_calls += 1
+        return chunk
+
+    # Populate both envs through a normal fetch+step.
+    scheduler.get_action(fetch)
+    assert fetch_calls == 1
 
     scheduler.reset(torch.tensor([1]))
 
+    # env 0 keeps its (advanced) state; env 1 is flagged for refetch.
     assert scheduler.env_requires_new_chunk.tolist() == [False, True]
-    assert scheduler.current_action_index.tolist() == [0, -1]
+    assert scheduler.current_action_index.tolist() == [1, -1]
+
+    # Next call refetches because env 1 needs a chunk; env 0 must not be overwritten.
+    env0_buffer_before = scheduler.current_action_chunk[0].clone()
+    scheduler.get_action(fetch)
+    assert fetch_calls == 2
+    torch.testing.assert_close(scheduler.current_action_chunk[0], env0_buffer_before)
 
 
 # --------------------------- SyncedBatchActionScheduler --------------------------

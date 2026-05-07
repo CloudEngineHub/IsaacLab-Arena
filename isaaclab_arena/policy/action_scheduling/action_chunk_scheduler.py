@@ -62,10 +62,22 @@ class ActionChunkScheduler(ActionScheduler):
         with horizon >= action_horizon.
 
         ``hold_action`` is part of the base ``ActionScheduler`` API for schedulers that
-        need a fallback for waiting envs (e.g. ``SyncedBatchActionScheduler``); this
-        scheduler doesn't have a waiting state so the argument is accepted and ignored.
+        need a fallback for waiting envs; this scheduler doesn't have a waiting state
+        so the argument is accepted and ignored.
         """
         del hold_action
+        if self.env_requires_new_chunk.any():
+            new_chunk = fetch_action_tensor_fn()
+            mask = self.env_requires_new_chunk
+            self.current_action_chunk[mask] = new_chunk[mask]
+            self.current_action_index[mask] = 0
+            self.env_requires_new_chunk[mask] = False
+
+            self._n_fetch_calls += 1
+            n_needed = int(mask.sum().item())
+            self._total_envs_needed += n_needed
+            self._per_env_fetch_count[mask] += 1
+
         assert self.current_action_index.min() >= 0, "At least one env's action index is less than 0"
         assert (
             self.current_action_index.max() < self.action_chunk_length
