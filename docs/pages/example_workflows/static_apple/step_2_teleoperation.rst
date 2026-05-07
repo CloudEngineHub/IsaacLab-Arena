@@ -162,7 +162,7 @@ Step 4: Record with the headset device
       # Record demonstrations with OpenXR teleop
       python isaaclab_arena/scripts/imitation_learning/record_demos.py \
         --viz kit \
-        --device cuda \
+        --device cpu \
         --enable_cameras \
         --dataset_file $DATASET_DIR/arena_g1_static_apple_dataset_recorded.hdf5 \
         --num_demos 10 \
