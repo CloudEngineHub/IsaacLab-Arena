@@ -1,5 +1,6 @@
-#!/usr/bin/env python3
-# Copyright (c) 2025-2026, The Isaac Lab Arena Project Developers.
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
 # SPDX-License-Identifier: Apache-2.0
 
 """Scan all robolab objects for stability with and without convexHull override.
@@ -13,23 +14,18 @@ Usage (inside container):
 
 from __future__ import annotations
 
-import sys
+import torch
 
 from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
 from isaaclab_arena.llm_env_gen.stability_utils import (
     add_stability_cli_args,
     classify_object,
-    collect_checkable_objects,
-    compute_aabb_overlap_pairs,
-    format_metrics_line,
     get_rigid_pose,
     get_rigid_velocity,
     thresholds_from_args,
     tilt_angle_rad,
 )
 from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppContext, teardown_simulation_app
-
-import torch
 
 ROBOLAB_OBJECTS = [
     "alphabet_soup_can_hope_robolab",
@@ -105,9 +101,6 @@ ROBOLAB_OBJECTS = [
 
 def run_one_object(args_cli, object_name: str, force_convex_hull: bool) -> dict:
     """Boot the GR1 env with a single object and return stability metrics."""
-    import argparse
-    import gymnasium as gym
-
     from isaaclab_arena_environments.cli import get_arena_builder_from_cli, get_isaaclab_arena_environments_cli_parser
 
     parser = get_isaaclab_arena_cli_parser()
@@ -116,12 +109,17 @@ def run_one_object(args_cli, object_name: str, force_convex_hull: bool) -> dict:
 
     test_args = parser.parse_args([
         "--headless",
-        "--num_envs", "1",
-        "--settle_steps", "60",
+        "--num_envs",
+        "1",
+        "--settle_steps",
+        "60",
         "gr1_table_multi_object_no_collision",
-        "--embodiment", "gr1_joint",
-        "--mode", "homogeneous",
-        "--objects", object_name,
+        "--embodiment",
+        "gr1_joint",
+        "--mode",
+        "homogeneous",
+        "--objects",
+        object_name,
     ])
 
     # Override force_convex_hull
@@ -188,10 +186,10 @@ def main():
             changed = row.get("status_decomp") != row.get("status_hull")
             marker = " *** CHANGED ***" if changed else ""
             print(
-                f"{obj_name:<50s} decomp={row.get('status_decomp','?'):>16s} "
-                f"(tilt={row.get('tilt_decomp','?'):>6s}°) | "
-                f"hull={row.get('status_hull','?'):>16s} "
-                f"(tilt={row.get('tilt_hull','?'):>6s}°){marker}",
+                f"{obj_name:<50s} decomp={row.get('status_decomp', '?'):>16s} "
+                f"(tilt={row.get('tilt_decomp', '?'):>6s}°) | "
+                f"hull={row.get('status_hull', '?'):>16s} "
+                f"(tilt={row.get('tilt_hull', '?'):>6s}°){marker}",
                 flush=True,
             )
             results.append(row)
@@ -199,16 +197,14 @@ def main():
     print("\n\n=== SUMMARY: Objects where convexHull changes stability ===")
     for r in results:
         if r.get("status_decomp") != r.get("status_hull"):
-            print(
-                f"  {r['name']:<50s} {r.get('status_decomp','?'):>16s} -> {r.get('status_hull','?'):>16s}"
-            )
+            print(f"  {r['name']:<50s} {r.get('status_decomp', '?'):>16s} -> {r.get('status_hull', '?'):>16s}")
 
     print("\n=== SUMMARY: Objects unstable even WITH convexHull ===")
     for r in results:
         if r.get("status_hull") not in ("stable", None) and not str(r.get("status_hull", "")).startswith("ERROR"):
             print(
-                f"  {r['name']:<50s} hull={r.get('status_hull','?'):>16s} "
-                f"(tilt={r.get('tilt_hull','?')}°, z_drop={r.get('z_drop_hull','?')}m)"
+                f"  {r['name']:<50s} hull={r.get('status_hull', '?'):>16s} "
+                f"(tilt={r.get('tilt_hull', '?')}°, z_drop={r.get('z_drop_hull', '?')}m)"
             )
 
 

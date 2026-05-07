@@ -1,5 +1,6 @@
-#!/usr/bin/env python3
-# Copyright (c) 2025-2026, The Isaac Lab Arena Project Developers.
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
 # SPDX-License-Identifier: Apache-2.0
 
 """Scan robolab objects for stability under natural placement (On table, solver-placed).
@@ -33,7 +34,6 @@ import json
 import math
 import os
 import subprocess
-import sys
 
 PYTHON = os.environ.get("ISAAC_SIM_PYTHON", "/isaac-sim/python.sh")
 CHECKER = "isaaclab_arena/llm_env_gen/run_stability_check.py"
@@ -120,12 +120,17 @@ MULTI_OBJECT_SET = [
 def run_check(object_names: list[str], force_convex_hull: bool = False, timeout: int = 120) -> dict | None:
     """Run stability check in a subprocess and return parsed JSON result."""
     cmd = [
-        PYTHON, CHECKER,
-        "--headless", "--json",
-        "--num_envs", "1",
-        "--settle_steps", "60",
+        PYTHON,
+        CHECKER,
+        "--headless",
+        "--json",
+        "--num_envs",
+        "1",
+        "--settle_steps",
+        "60",
         "gr1_table_multi_object_no_collision",
-        "--embodiment", "gr1_joint",
+        "--embodiment",
+        "gr1_joint",
         "--objects",
     ] + object_names
 
@@ -135,8 +140,12 @@ def run_check(object_names: list[str], force_convex_hull: bool = False, timeout:
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
-            env=env, start_new_session=True,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+            start_new_session=True,
         )
     except subprocess.TimeoutExpired:
         return None
@@ -171,27 +180,33 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Scan robolab objects for stability")
-    parser.add_argument("--objects", nargs="*", type=str, default=None,
-                        help="Specific objects to test. Default: all robolab objects.")
-    parser.add_argument("--force_convex_hull", action="store_true", default=False,
-                        help="Enable convexHull override for all tests.")
-    parser.add_argument("--compare", action="store_true", default=False,
-                        help="Run both with and without convexHull and show side-by-side comparison.")
-    parser.add_argument("--multi", action="store_true", default=False,
-                        help="Also test a multi-object scene.")
-    parser.add_argument("--timeout", type=int, default=120,
-                        help="Per-object subprocess timeout in seconds.")
+    parser.add_argument(
+        "--objects", nargs="*", type=str, default=None, help="Specific objects to test. Default: all robolab objects."
+    )
+    parser.add_argument(
+        "--force_convex_hull", action="store_true", default=False, help="Enable convexHull override for all tests."
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        default=False,
+        help="Run both with and without convexHull and show side-by-side comparison.",
+    )
+    parser.add_argument("--multi", action="store_true", default=False, help="Also test a multi-object scene.")
+    parser.add_argument("--timeout", type=int, default=120, help="Per-object subprocess timeout in seconds.")
     args = parser.parse_args()
 
     object_list = args.objects if args.objects else ROBOLAB_OBJECTS
     total = len(object_list)
 
     if args.compare:
-        print(f"\n{'='*100}")
+        print(f"\n{'=' * 100}")
         print(f"{'ROBOLAB STABILITY SCAN — convexDecomposition vs convexHull':^100}")
-        print(f"{'='*100}")
-        print(f"{'#':>3} {'Object':<45s} {'Decomp Status':>14s} {'Tilt':>6s} {'Hull Status':>14s} {'Tilt':>6s} {'Effect':>10s}")
-        print(f"{'-'*100}")
+        print(f"{'=' * 100}")
+        print(
+            f"{'#':>3} {'Object':<45s} {'Decomp Status':>14s} {'Tilt':>6s} {'Hull Status':>14s} {'Tilt':>6s} {'Effect':>10s}"
+        )
+        print(f"{'-' * 100}")
 
         changed = []
         for i, name in enumerate(object_list):
@@ -212,25 +227,25 @@ def main():
                 effect = "improved"
 
             print(
-                f"{i+1:>3} {name:<45s} {d_status:>14s} {d_tilt:5.1f}° {h_status:>14s} {h_tilt:5.1f}° {effect:>10s}",
+                f"{i + 1:>3} {name:<45s} {d_status:>14s} {d_tilt:5.1f}° {h_status:>14s} {h_tilt:5.1f}° {effect:>10s}",
                 flush=True,
             )
 
-        print(f"\n{'='*100}")
+        print(f"\n{'=' * 100}")
         print(f"SUMMARY: {len(changed)}/{total} objects changed with convexHull")
         if changed:
             for n in changed:
                 print(f"  - {n}")
-        print(f"{'='*100}")
+        print(f"{'=' * 100}")
 
     else:
         hull = args.force_convex_hull
         mode_label = "convexHull" if hull else "convexDecomposition (baseline)"
-        print(f"\n{'='*90}")
+        print(f"\n{'=' * 90}")
         print(f"{'ROBOLAB STABILITY SCAN — ' + mode_label:^90}")
-        print(f"{'='*90}")
+        print(f"{'=' * 90}")
         print(f"{'#':>3} {'Object':<45s} {'Status':>14s} {'Tilt':>7s} {'Z-drop':>8s} {'XY-drift':>9s} {'Jump1':>7s}")
-        print(f"{'-'*90}")
+        print(f"{'-' * 90}")
 
         unstable = []
         errors = []
@@ -239,7 +254,7 @@ def main():
             m = extract_metrics(data, name)
 
             if m is None:
-                print(f"{i+1:>3} {name:<45s} {'ERROR':>14s}", flush=True)
+                print(f"{i + 1:>3} {name:<45s} {'ERROR':>14s}", flush=True)
                 errors.append(name)
                 continue
 
@@ -251,28 +266,29 @@ def main():
 
             marker = " ***" if status != "stable" else ""
             print(
-                f"{i+1:>3} {name:<45s} {status:>14s} {tilt:5.1f}° {z_drop:7.4f}m {xy_drift:8.4f}m {jump1:6.4f}m{marker}",
+                f"{i + 1:>3} {name:<45s} {status:>14s} {tilt:5.1f}° {z_drop:7.4f}m {xy_drift:8.4f}m"
+                f" {jump1:6.4f}m{marker}",
                 flush=True,
             )
 
             if status != "stable":
                 unstable.append((name, status, tilt))
 
-        print(f"\n{'='*90}")
+        print(f"\n{'=' * 90}")
         print(f"RESULTS: {total - len(unstable) - len(errors)} stable, {len(unstable)} unstable, {len(errors)} errors")
         if unstable:
-            print(f"\nUnstable objects:")
+            print("\nUnstable objects:")
             for name, status, tilt in unstable:
                 print(f"  {name:<45s} {status:>14s} (tilt={tilt:.1f}°)")
         if errors:
             print(f"\nErrors: {', '.join(errors)}")
-        print(f"{'='*90}")
+        print(f"{'=' * 90}")
 
     if args.multi:
-        print(f"\n{'='*90}")
+        print(f"\n{'=' * 90}")
         print(f"{'MULTI-OBJECT SCENE':^90}")
         print(f"Objects: {', '.join(MULTI_OBJECT_SET)}")
-        print(f"{'='*90}")
+        print(f"{'=' * 90}")
 
         for hull, label in [(False, "convexDecomposition"), (True, "convexHull")]:
             data = run_check(MULTI_OBJECT_SET, force_convex_hull=hull, timeout=args.timeout)

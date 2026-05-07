@@ -121,8 +121,7 @@ def check_stability_for_arena_builder(arena_builder, args_cli) -> int:
             for pair in overlap_pairs:
                 ox, oy, oz = pair["overlap_xyz"]
                 print(
-                    f"[stability]   {pair['a']} <-> {pair['b']}: "
-                    f"overlap=({ox:.4f}, {oy:.4f}, {oz:.4f}) m",
+                    f"[stability]   {pair['a']} <-> {pair['b']}: overlap=({ox:.4f}, {oy:.4f}, {oz:.4f}) m",
                     flush=True,
                 )
         else:
@@ -130,9 +129,7 @@ def check_stability_for_arena_builder(arena_builder, args_cli) -> int:
 
         # ---- 2) Snapshot spawn pose ---------------------------------------
         zero = torch.zeros(env.action_space.shape, device=env.unwrapped.device)
-        spawn_pose: dict[str, tuple[torch.Tensor, torch.Tensor]] = {
-            n: get_rigid_pose(env, n, env_id) for n in names
-        }
+        spawn_pose: dict[str, tuple[torch.Tensor, torch.Tensor]] = {n: get_rigid_pose(env, n, env_id) for n in names}
 
         # ---- 3) One physics step → first-step jump ------------------------
         env.step(zero)

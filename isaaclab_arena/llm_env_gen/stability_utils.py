@@ -207,9 +207,7 @@ def collect_checkable_objects(arena_env, only_name: str | None = None) -> list[s
         names.append(asset.name)
 
     if only_name is not None:
-        assert only_name in names, (
-            f"--object {only_name!r} not in checkable rigid objects: {names}"
-        )
+        assert only_name in names, f"--object {only_name!r} not in checkable rigid objects: {names}"
         return [only_name]
     return names
 
@@ -227,10 +225,9 @@ def get_rigid_pose(env, name: str, env_id: int) -> tuple[torch.Tensor, torch.Ten
     import warp as wp
 
     rigid_objects = env.unwrapped.scene.rigid_objects
-    assert name in rigid_objects, (
-        f"Object '{name}' not found in scene.rigid_objects. "
-        f"Available: {list(rigid_objects.keys())}"
-    )
+    assert (
+        name in rigid_objects
+    ), f"Object '{name}' not found in scene.rigid_objects. Available: {list(rigid_objects.keys())}"
     obj = rigid_objects[name]
     pos = wp.to_torch(obj.data.root_pos_w)[env_id].clone()
     quat = wp.to_torch(obj.data.root_quat_w)[env_id].clone()
@@ -242,10 +239,9 @@ def get_rigid_velocity(env, name: str, env_id: int) -> tuple[torch.Tensor, torch
     import warp as wp
 
     rigid_objects = env.unwrapped.scene.rigid_objects
-    assert name in rigid_objects, (
-        f"Object '{name}' not found in scene.rigid_objects. "
-        f"Available: {list(rigid_objects.keys())}"
-    )
+    assert (
+        name in rigid_objects
+    ), f"Object '{name}' not found in scene.rigid_objects. Available: {list(rigid_objects.keys())}"
     obj = rigid_objects[name]
     lin = wp.to_torch(obj.data.root_lin_vel_w)[env_id].clone()
     ang = wp.to_torch(obj.data.root_ang_vel_w)[env_id].clone()
@@ -324,7 +320,7 @@ def compute_aabb_overlap_pairs(env, arena_env, names: list[str], env_id: int) ->
     sorted_names = sorted(bboxes.keys())
     for i, a in enumerate(sorted_names):
         a_min, a_max = bboxes[a]
-        for b in sorted_names[i + 1:]:
+        for b in sorted_names[i + 1 :]:
             b_min, b_max = bboxes[b]
             ox = float((torch.min(a_max[0], b_max[0]) - torch.max(a_min[0], b_min[0])).item())
             oy = float((torch.min(a_max[1], b_max[1]) - torch.max(a_min[1], b_min[1])).item())
@@ -383,10 +379,7 @@ def classify_object(metrics: dict, thresholds: dict) -> str:
         return STABILITY_STATUS_TIPPED
     if metrics["xy_drift_m"] > thresholds["xy_drift_thresh"]:
         return STABILITY_STATUS_SLID
-    if (
-        metrics["lin_vel_norm"] > thresholds["vel_thresh_lin"]
-        or metrics["ang_vel_norm"] > thresholds["vel_thresh_ang"]
-    ):
+    if metrics["lin_vel_norm"] > thresholds["vel_thresh_lin"] or metrics["ang_vel_norm"] > thresholds["vel_thresh_ang"]:
         return STABILITY_STATUS_UNSETTLED
     return STABILITY_STATUS_STABLE
 
@@ -413,9 +406,5 @@ def format_metrics_line(name: str, metrics: dict, status: str) -> str:
         f"tilt={math.degrees(metrics['tilt_rad']):.2f}deg "
         f"|v|={metrics['lin_vel_norm']:.4f}m/s "
         f"|w|={metrics['ang_vel_norm']:.4f}rad/s"
-        + (
-            f" | overlaps={metrics['aabb_overlap_with']}"
-            if metrics.get("aabb_overlap_with")
-            else ""
-        )
+        + (f" | overlaps={metrics['aabb_overlap_with']}" if metrics.get("aabb_overlap_with") else "")
     )

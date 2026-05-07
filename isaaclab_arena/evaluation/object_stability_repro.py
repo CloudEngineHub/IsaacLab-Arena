@@ -3,24 +3,34 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Reproduce and measure multi-object bouncing/stability.
+"""Reproduce the object stability issue fixed by the placement MR.
 
-Run once with ``--origin_main_solver`` to emulate the old solver behavior, then
-run the same scene without that flag and with ``--force_convex_hull`` to verify
-the fix.
+This script is intentionally small and CLI-oriented so reviewers can compare the
+old behavior with the proposed fixes in the same scene:
 
-Visual repro shape::
+* ``--origin_main_solver`` emulates the origin/main solver behavior: 3D
+  no-collision loss (``xy_only=False``) and anchor/table comparisons.
+* The fixed run omits ``--origin_main_solver`` so no-collision is XY-only and
+  anchors are excluded (``xy_only=True``), then adds ``--force_convex_hull`` to
+  use simpler collision geometry for fragile scanned objects.
+
+The baseline command should report ``overall=fell_off``. The fixed command
+should report ``overall=stable``.
+
+Visual baseline repro::
 
     /isaac-sim/python.sh isaaclab_arena/evaluation/object_stability_repro.py \
         --viz kit --num_envs 4 --env_spacing 4.0 --seed 123 --placement_seed 123 \
-        --all_envs --settle_steps 60 --dwell_steps 300 --origin_main_solver \
+        --all_envs --settle_steps 60 --dwell_steps 3000 --origin_main_solver --xy_only false \
         gr1_table_multi_object_no_collision --embodiment gr1_joint \
         --objects parmesan_cheese_canister_hope_robolab mustard_bottle_hope_robolab \
             bbq_sauce_bottle_hope_robolab milk_carton_hope_robolab
 
+Visual fixed run::
+
     /isaac-sim/python.sh isaaclab_arena/evaluation/object_stability_repro.py \
         --viz kit --num_envs 4 --env_spacing 4.0 --seed 123 --placement_seed 123 \
-        --all_envs --settle_steps 60 --dwell_steps 300 --force_convex_hull \
+        --all_envs --settle_steps 60 --dwell_steps 3000 --xy_only true --force_convex_hull \
         gr1_table_multi_object_no_collision --embodiment gr1_joint \
         --objects parmesan_cheese_canister_hope_robolab mustard_bottle_hope_robolab \
             bbq_sauce_bottle_hope_robolab milk_carton_hope_robolab
@@ -32,9 +42,8 @@ import argparse
 import json
 import math
 import sys
-from typing import Any
-
 import torch
+from typing import Any
 
 from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
 from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppContext
@@ -42,12 +51,23 @@ from isaaclab_arena.utils.random import set_seed
 from isaaclab_arena_environments.cli import get_arena_builder_from_cli, get_isaaclab_arena_environments_cli_parser
 
 
+def _parse_bool(value: str) -> bool:
+    value_lower = value.lower()
+    if value_lower in ("1", "true", "yes", "on"):
+        return True
+    if value_lower in ("0", "false", "no", "off"):
+        return False
+    raise argparse.ArgumentTypeError("Expected one of: true, false, yes, no, 1, 0")
+
+
 def _add_repro_args(parser: argparse.ArgumentParser) -> None:
     group = parser.add_argument_group("Object stability repro")
     group.add_argument("--env_id", type=int, default=0, help="Environment index to check.")
     group.add_argument("--all_envs", action="store_true", default=False, help="Check every environment.")
     group.add_argument("--settle_steps", type=int, default=60, help="Zero-action steps before final metrics.")
-    group.add_argument("--dwell_steps", type=int, default=0, help="Extra zero-action steps after metrics for viewer inspection.")
+    group.add_argument(
+        "--dwell_steps", type=int, default=0, help="Extra zero-action steps after metrics for viewer inspection."
+    )
     group.add_argument(
         "--placement_pool_size",
         type=int,
@@ -65,13 +85,31 @@ def _add_repro_args(parser: argparse.ArgumentParser) -> None:
         "--origin_main_solver",
         action="store_true",
         default=False,
-        help="Emulate origin/main no-collision: 3D volume loss and anchor comparisons.",
+        help=(
+            "Emulate origin/main no-collision behavior: use 3D overlap loss and include anchor/table objects in"
+            " no-collision comparisons. If omitted, the proposed solver behavior is used: xy_only=True and"
+            " anchors excluded."
+        ),
+    )
+    group.add_argument(
+        "--xy_only",
+        type=_parse_bool,
+        default=None,
+        metavar="{true,false}",
+        help=(
+            "Set no-collision XY-only mode explicitly. Use '--xy_only false' for the origin/main baseline and"
+            " '--xy_only true' for the proposed tabletop solver behavior. If omitted, this defaults from"
+            " --origin_main_solver."
+        ),
     )
     group.add_argument(
         "--force_convex_hull",
         action="store_true",
         default=False,
-        help="Replace convexDecomposition mesh collisions with convexHull after scene creation.",
+        help=(
+            "Replace convexDecomposition mesh collisions with convexHull after scene creation. This isolates the"
+            " scanned-object collision mesh fix."
+        ),
     )
     group.add_argument("--first_step_jump_thresh", type=float, default=0.02)
     group.add_argument("--z_drop_thresh", type=float, default=0.30)
@@ -90,7 +128,11 @@ def main() -> int:
         parser = get_isaaclab_arena_environments_cli_parser(parser)
         args_cli = parser.parse_args()
 
-        args_cli.no_collision_xy_only = not args_cli.origin_main_solver
+        # The baseline keeps origin/main semantics. The fixed run treats tabletop
+        # no-collision as 2D packing and lets On(table) control height.
+        args_cli.no_collision_xy_only = (
+            not args_cli.origin_main_solver if args_cli.xy_only is None else bool(args_cli.xy_only)
+        )
         args_cli.no_collision_include_anchors = args_cli.origin_main_solver
         args_cli.resolve_on_reset = False
         if args_cli.placement_pool_size is None:
@@ -122,16 +164,27 @@ def _run_check(env, arena_env, args_cli: argparse.Namespace) -> int:
     names = _collect_checkable_objects(arena_env)
     assert names, "No non-anchor rigid objects found to check."
     env_ids = list(range(int(args_cli.num_envs))) if args_cli.all_envs else [int(args_cli.env_id)]
+    solver_mode = "origin_main_baseline" if args_cli.origin_main_solver else "proposed_xy_only"
     print(
-        "[stability-repro] objects={} envs={} origin_main_solver={} force_convex_hull={}".format(
-            names,
-            env_ids,
-            args_cli.origin_main_solver,
+        "[stability-repro] solver_mode={} no_collision_xy_only={} no_collision_include_anchors={} "
+        "force_convex_hull={}".format(
+            solver_mode,
+            args_cli.no_collision_xy_only,
+            args_cli.no_collision_include_anchors,
             args_cli.force_convex_hull,
         ),
         flush=True,
     )
+    print(
+        "[stability-repro] objects={} envs={}".format(
+            names,
+            env_ids,
+        ),
+        flush=True,
+    )
 
+    # Measure both immediate spawn response and post-settle behavior so the
+    # output catches contact explosions, tipping, sliding, and falling.
     env.reset()
     zero_action = torch.zeros(env.action_space.shape, device=env.unwrapped.device)
     spawn_poses = _snapshot_poses(env, names, env_ids)
@@ -168,14 +221,12 @@ def _run_check(env, arena_env, args_cli: argparse.Namespace) -> int:
 
     if args_cli.json:
         print(
-            json.dumps(
-                {
-                    "overall_status": overall,
-                    "origin_main_solver": args_cli.origin_main_solver,
-                    "force_convex_hull": args_cli.force_convex_hull,
-                    "objects": per_env,
-                }
-            ),
+            json.dumps({
+                "overall_status": overall,
+                "origin_main_solver": args_cli.origin_main_solver,
+                "force_convex_hull": args_cli.force_convex_hull,
+                "objects": per_env,
+            }),
             flush=True,
         )
         sys.stdout.flush()
@@ -186,6 +237,8 @@ def _run_check(env, arena_env, args_cli: argparse.Namespace) -> int:
 
 
 def _collect_checkable_objects(arena_env) -> list[str]:
+    # Keep pxr-backed imports after SimulationApp starts. Importing them at
+    # module load time can break Kit extension initialization.
     from isaaclab_arena.assets.object_base import ObjectType
     from isaaclab_arena.relations.relations import IsAnchor
 
@@ -202,7 +255,9 @@ def _collect_checkable_objects(arena_env) -> list[str]:
     return names
 
 
-def _snapshot_poses(env, names: list[str], env_ids: list[int]) -> dict[int, dict[str, tuple[torch.Tensor, torch.Tensor]]]:
+def _snapshot_poses(
+    env, names: list[str], env_ids: list[int]
+) -> dict[int, dict[str, tuple[torch.Tensor, torch.Tensor]]]:
     return {env_id: {name: _get_rigid_pose(env, name, env_id) for name in names} for env_id in env_ids}
 
 
@@ -268,10 +323,7 @@ def _classify(metrics: dict, thresholds: dict) -> str:
         return "tipped"
     if metrics["xy_drift_m"] > thresholds["xy_drift_thresh"]:
         return "slid"
-    if (
-        metrics["lin_vel_norm"] > thresholds["vel_thresh_lin"]
-        or metrics["ang_vel_norm"] > thresholds["vel_thresh_ang"]
-    ):
+    if metrics["lin_vel_norm"] > thresholds["vel_thresh_lin"] or metrics["ang_vel_norm"] > thresholds["vel_thresh_ang"]:
         return "unsettled"
     return "stable"
 
