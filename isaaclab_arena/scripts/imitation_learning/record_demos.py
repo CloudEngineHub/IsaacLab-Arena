@@ -69,6 +69,13 @@ if "openxr" in args_cli.teleop_device.lower():
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
+# Patch isaaclab_physx's RTX render-update helper so the first frame's annotator
+# buffers are populated before the teleop loop renders. Without this the initial
+# pre-step render emerges black under the visualizer that record_demos.py uses.
+from isaaclab_arena.utils.isaaclab_utils.isaac_rtx_renderer_patch import patch_isaac_rtx_renderer
+
+patch_isaac_rtx_renderer()
+
 """Rest everything follows."""
 
 
