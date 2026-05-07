@@ -488,7 +488,7 @@ and validate that we can load it in Isaac Lab.</p>
     <span class="k">def</span><span class="w"> </span><span class="nf">get_env</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">args_cli</span><span class="p">:</span> <span class="n">argparse</span><span class="o">.</span><span class="n">Namespace</span><span class="p">):</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab_arena.environments.isaaclab_arena_environment</span><span class="w"> </span><span class="kn">import</span> <span class="n">IsaacLabArenaEnvironment</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab_arena.scene.scene</span><span class="w"> </span><span class="kn">import</span> <span class="n">Scene</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab_arena.tasks.locomanip_pick_and_place_task</span><span class="w"> </span><span class="kn">import</span> <span class="n">LocomanipPickAndPlaceTask</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab_arena.tasks.pick_and_place_task</span><span class="w"> </span><span class="kn">import</span> <span class="n">G1PickAndPlaceMimicEnvCfg</span><span class="p">,</span> <span class="n">PickAndPlaceTask</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">isaaclab_arena.utils.pose</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pose</span><span class="p">,</span> <span class="n">PoseRange</span>
 
         <span class="n">background</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">asset_registry</span><span class="o">.</span><span class="n">get_asset_by_name</span><span class="p">(</span><span class="s2">&quot;galileo_locomanip&quot;</span><span class="p">)()</span>
@@ -515,8 +515,20 @@ and validate that we can load it in Isaac Lab.</p>
         <span class="p">)</span>
         <span class="n">embodiment</span><span class="o">.</span><span class="n">set_initial_pose</span><span class="p">(</span><span class="n">Pose</span><span class="p">(</span><span class="n">position_xyz</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.18</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">rotation_xyzw</span><span class="o">=</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)))</span>
 
+        <span class="k">def</span><span class="w"> </span><span class="nf">_build_g1_pick_and_place_mimic_cfg</span><span class="p">(</span><span class="n">arm_mode</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">G1PickAndPlaceMimicEnvCfg</span><span class="p">(</span>
+                <span class="n">pick_up_object_name</span><span class="o">=</span><span class="n">pick_up_object</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                <span class="n">destination_location_name</span><span class="o">=</span><span class="n">blue_sorting_bin</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                <span class="n">arm_mode</span><span class="o">=</span><span class="n">arm_mode</span><span class="p">,</span>
+            <span class="p">)</span>
+
         <span class="n">scene</span> <span class="o">=</span> <span class="n">Scene</span><span class="p">(</span><span class="n">assets</span><span class="o">=</span><span class="p">[</span><span class="n">background</span><span class="p">,</span> <span class="n">pick_up_object</span><span class="p">,</span> <span class="n">blue_sorting_bin</span><span class="p">])</span>
-        <span class="n">task</span> <span class="o">=</span> <span class="n">LocomanipPickAndPlaceTask</span><span class="p">(</span><span class="n">pick_up_object</span><span class="p">,</span> <span class="n">blue_sorting_bin</span><span class="p">,</span> <span class="n">background</span><span class="p">),</span>
+        <span class="n">task</span> <span class="o">=</span> <span class="n">PickAndPlaceTask</span><span class="p">(</span>
+            <span class="n">pick_up_object</span><span class="p">,</span>
+            <span class="n">blue_sorting_bin</span><span class="p">,</span>
+            <span class="n">background</span><span class="p">,</span>
+            <span class="n">mimic_env_cfg_factory</span><span class="o">=</span><span class="n">_build_g1_pick_and_place_mimic_cfg</span><span class="p">,</span>
+        <span class="p">)</span>
 
         <span class="n">isaaclab_arena_environment</span> <span class="o">=</span> <span class="n">IsaacLabArenaEnvironment</span><span class="p">(</span>
             <span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
@@ -571,12 +583,26 @@ currently set manually to create an achievable task.</p>
 </div>
 <p>Now we bring everything together into a IsaacLab-Arena scene.
 See <a class="reference internal" href="../../concepts/scene/index.html"><span class="doc">Scene</span></a> for scene composition details.</p>
-<p><strong>4. Create the Locomanip Pick and Place Task</strong></p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">task</span> <span class="o">=</span> <span class="n">LocomanipPickAndPlaceTask</span><span class="p">(</span><span class="n">pick_up_object</span><span class="p">,</span> <span class="n">blue_sorting_bin</span><span class="p">,</span> <span class="n">background</span><span class="p">),</span>
+<p><strong>4. Create the Pick and Place Task</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">_build_g1_pick_and_place_mimic_cfg</span><span class="p">(</span><span class="n">arm_mode</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">G1PickAndPlaceMimicEnvCfg</span><span class="p">(</span>
+        <span class="n">pick_up_object_name</span><span class="o">=</span><span class="n">pick_up_object</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+        <span class="n">destination_location_name</span><span class="o">=</span><span class="n">blue_sorting_bin</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+        <span class="n">arm_mode</span><span class="o">=</span><span class="n">arm_mode</span><span class="p">,</span>
+    <span class="p">)</span>
+
+<span class="n">task</span> <span class="o">=</span> <span class="n">PickAndPlaceTask</span><span class="p">(</span>
+    <span class="n">pick_up_object</span><span class="p">,</span>
+    <span class="n">blue_sorting_bin</span><span class="p">,</span>
+    <span class="n">background</span><span class="p">,</span>
+    <span class="n">mimic_env_cfg_factory</span><span class="o">=</span><span class="n">_build_g1_pick_and_place_mimic_cfg</span><span class="p">,</span>
+<span class="p">)</span>
 </pre></div>
 </div>
-<p>The <code class="docutils literal notranslate"><span class="pre">LocomanipPickAndPlaceTask</span></code> encapsulates the task’s goal of the
-environment: pick up the specified object and place it in the blue sorting bin.</p>
+<p><code class="docutils literal notranslate"><span class="pre">PickAndPlaceTask</span></code> encapsulates the task’s goal of the environment: pick up the specified object
+and place it in the blue sorting bin. The locomanip-specific Mimic config (3-subtask arm sequences
+plus a 4-phase nav body) is injected via <code class="docutils literal notranslate"><span class="pre">mimic_env_cfg_factory</span></code> rather than via a task subclass,
+because the cfg shape diverges from the parent <code class="docutils literal notranslate"><span class="pre">PickPlaceMimicEnvCfg</span></code> defaults.</p>
 <p>The task knows about the key objects involved (what to pick, where to place it, and the environment context) and will
 provide rewards, compute observations, and determine when the episode should end.
 See <a class="reference internal" href="../../concepts/task/index.html"><span class="doc">Task</span></a> for task creation details.</p>
