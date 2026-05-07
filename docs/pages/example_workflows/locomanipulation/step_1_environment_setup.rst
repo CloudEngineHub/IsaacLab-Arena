@@ -25,8 +25,7 @@ Environment Description
            def get_env(self, args_cli: argparse.Namespace):
                from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
                from isaaclab_arena.scene.scene import Scene
-               from isaaclab_arena.tasks.g1_pick_and_place_mimic_cfg import G1PickAndPlaceMimicEnvCfg
-               from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
+               from isaaclab_arena.tasks.pick_and_place_task import G1PickAndPlaceMimicEnvCfg, PickAndPlaceTask
                from isaaclab_arena.utils.pose import Pose, PoseRange
 
                background = self.asset_registry.get_asset_by_name("galileo_locomanip")()

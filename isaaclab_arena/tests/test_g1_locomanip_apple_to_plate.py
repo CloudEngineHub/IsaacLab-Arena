@@ -36,8 +36,7 @@ def get_test_environment(num_envs: int):
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena.tasks.g1_pick_and_place_mimic_cfg import G1PickAndPlaceMimicEnvCfg
-    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
+    from isaaclab_arena.tasks.pick_and_place_task import G1PickAndPlaceMimicEnvCfg, PickAndPlaceTask
     from isaaclab_arena.utils.pose import Pose
 
     asset_registry = AssetRegistry()
@@ -194,8 +193,7 @@ def _test_mimic_cfg_uses_object_and_destination_names(simulation_app) -> bool:
 
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-    from isaaclab_arena.tasks.g1_pick_and_place_mimic_cfg import G1PickAndPlaceMimicEnvCfg
-    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
+    from isaaclab_arena.tasks.pick_and_place_task import G1PickAndPlaceMimicEnvCfg, PickAndPlaceTask
     from isaaclab_arena.utils.pose import Pose
 
     asset_registry = AssetRegistry()
@@ -262,8 +260,7 @@ def _test_mimic_cfg_brown_box_preserves_legacy_datagen_name(simulation_app) -> b
 
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-    from isaaclab_arena.tasks.g1_pick_and_place_mimic_cfg import G1PickAndPlaceMimicEnvCfg
-    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
+    from isaaclab_arena.tasks.pick_and_place_task import G1PickAndPlaceMimicEnvCfg, PickAndPlaceTask
     from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena_environments.galileo_g1_locomanip_pick_and_place_environment import (
         _apply_legacy_datagen_name_override,
@@ -326,8 +323,7 @@ def _test_mimic_cfg_brown_box_non_default_destination_is_not_legacy(simulation_a
 
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-    from isaaclab_arena.tasks.g1_pick_and_place_mimic_cfg import G1PickAndPlaceMimicEnvCfg
-    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
+    from isaaclab_arena.tasks.pick_and_place_task import G1PickAndPlaceMimicEnvCfg, PickAndPlaceTask
     from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena_environments.galileo_g1_locomanip_pick_and_place_environment import (
         _apply_legacy_datagen_name_override,
