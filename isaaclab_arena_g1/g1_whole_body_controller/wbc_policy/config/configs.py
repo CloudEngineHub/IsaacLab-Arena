@@ -81,8 +81,10 @@ class AgileConfig(BaseConfig):
     wbc_version: Literal["agile"] = "agile"
     """Version of the whole body controller."""
 
+    # Pinned to a commit (rather than `main`) so upstream changes don't silently shift behavior.
+    # Bump to a new SHA / release tag when intentionally adopting a new policy export.
     wbc_model_path: str = (
-        "https://github.com/nvidia-isaac/WBC-AGILE/raw/v1.2/agile/data/policy/velocity_g1/unitree_g1_velocity_e2e.onnx"
+        "https://github.com/nvidia-isaac/WBC-AGILE/raw/7259792cf10803aab814d101134d493d24c8f22f/agile/data/policy/velocity_height_g1/unitree_g1_velocity_height_recurrent_student.onnx"
     )
     """Path to WBC model file (GitHub URL, resolved via retrieve_file_path)"""
 

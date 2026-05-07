@@ -138,7 +138,12 @@ class G1WBCPinkEmbodiment(G1EmbodimentBase):
 
 @register_asset
 class G1WBCAgilePinkEmbodiment(G1EmbodimentBase):
-    """Embodiment for the G1 robot with AGILE WBC policy and PINK IK upperbody control."""
+    """Embodiment for the G1 robot with AGILE WBC policy and PINK IK upperbody control.
+
+    Like :class:`G1WBCAgileJointEmbodiment`, this overrides the leg/feet/waist actuator
+    gains to match the agile training-time values; without that override the policy's
+    joint targets get amplified by the Arena's stiffer default PD loop.
+    """
 
     name = "g1_wbc_agile_pink"
 
@@ -159,12 +164,21 @@ class G1WBCAgilePinkEmbodiment(G1EmbodimentBase):
         self.camera_config._is_tiled_camera = use_tiled_camera
         self.camera_config._camera_offset = camera_offset
 
+        _override_actuator_gains_for_agile(self.scene_config.robot)
+
 
 @register_asset
 class G1WBCAgileJointEmbodiment(G1EmbodimentBase):
     """Embodiment for the G1 robot with AGILE WBC policy and direct joint upperbody control.
 
     By default uses tiled camera for efficient parallel evaluation.
+
+    Overrides the leg/feet/waist actuator gains to match the agile training-time
+    values from ``unitree_g1_velocity_height_recurrent_student.yaml``. The Arena's
+    default G1 actuator stiffness is 2-4x higher than what the agile policy was
+    trained on; without this override the policy's joint targets get amplified
+    by the stiffer PD loop, manifesting as a slow yaw drift / postural twitch
+    even when the velocity command is zero.
     """
 
     name = "g1_wbc_agile_joint"
@@ -184,6 +198,108 @@ class G1WBCAgileJointEmbodiment(G1EmbodimentBase):
         self.event_config = G1WBCJointEventCfg()
         self.camera_config._is_tiled_camera = use_tiled_camera
         self.camera_config._camera_offset = camera_offset
+
+        _override_actuator_gains_for_agile(self.scene_config.robot)
+
+
+# Canonical PD gains and armature from the agile recurrent-student training YAML
+# (`agile/data/policy/velocity_height_g1/unitree_g1_velocity_height_recurrent_student.yaml`).
+# Keyed by the actuator group name in `G1SceneCfg.robot.actuators` and then by
+# *exact* joint name (no regex) to avoid the IsaacLab regex resolver complaining
+# about overlapping patterns (e.g. `.*_hip_.*` vs `.*_hip_pitch_joint`).
+_AGILE_GAINS_PER_GROUP: dict[str, dict[str, dict[str, float]]] = {
+    "legs": {
+        "left_hip_pitch_joint": {
+            "stiffness": 40.179237365722656,
+            "damping": 2.557889699935913,
+            "armature": 0.010177520103752613,
+        },
+        "right_hip_pitch_joint": {
+            "stiffness": 40.179237365722656,
+            "damping": 2.557889699935913,
+            "armature": 0.010177520103752613,
+        },
+        "left_hip_roll_joint": {
+            "stiffness": 99.09842681884766,
+            "damping": 6.308801651000977,
+            "armature": 0.025101924315094948,
+        },
+        "right_hip_roll_joint": {
+            "stiffness": 99.09842681884766,
+            "damping": 6.308801651000977,
+            "armature": 0.025101924315094948,
+        },
+        "left_hip_yaw_joint": {
+            "stiffness": 40.179237365722656,
+            "damping": 2.557889699935913,
+            "armature": 0.010177520103752613,
+        },
+        "right_hip_yaw_joint": {
+            "stiffness": 40.179237365722656,
+            "damping": 2.557889699935913,
+            "armature": 0.010177520103752613,
+        },
+        "left_knee_joint": {
+            "stiffness": 99.09842681884766,
+            "damping": 6.308801651000977,
+            "armature": 0.025101924315094948,
+        },
+        "right_knee_joint": {
+            "stiffness": 99.09842681884766,
+            "damping": 6.308801651000977,
+            "armature": 0.025101924315094948,
+        },
+    },
+    "feet": {
+        "left_ankle_pitch_joint": {
+            "stiffness": 28.501245498657227,
+            "damping": 1.8144457340240479,
+            "armature": 0.007219450082629919,
+        },
+        "right_ankle_pitch_joint": {
+            "stiffness": 28.501245498657227,
+            "damping": 1.8144457340240479,
+            "armature": 0.007219450082629919,
+        },
+        "left_ankle_roll_joint": {
+            "stiffness": 28.501245498657227,
+            "damping": 1.8144457340240479,
+            "armature": 0.007219450082629919,
+        },
+        "right_ankle_roll_joint": {
+            "stiffness": 28.501245498657227,
+            "damping": 1.8144457340240479,
+            "armature": 0.007219450082629919,
+        },
+    },
+    "waist": {
+        "waist_yaw_joint": {"stiffness": 300.0, "damping": 5.0, "armature": 0.029999999329447746},
+        "waist_roll_joint": {"stiffness": 300.0, "damping": 5.0, "armature": 0.029999999329447746},
+        "waist_pitch_joint": {"stiffness": 300.0, "damping": 5.0, "armature": 0.029999999329447746},
+    },
+}
+
+
+def _override_actuator_gains_for_agile(robot_cfg: ArticulationCfg) -> None:
+    """Override the Arena G1 actuator stiffness/damping/armature in-place to match
+    the agile training-time values for joints the AGILE policy controls.
+
+    Replaces the actuator group's ``stiffness`` / ``damping`` / ``armature`` dicts
+    with exact-joint-name keys so the IsaacLab regex resolver doesn't see overlap
+    between e.g. the original ``.*_hip_.*`` armature key and the more specific
+    per-joint stiffness keys we add here.
+
+    Other parameters (``joint_names_expr``, ``effort_limit``, ``velocity_limit``,
+    ``friction``) keep their Arena defaults since they are physical limits or
+    joint-set definitions, not policy training inputs.
+    """
+    for group_name, per_joint_gains in _AGILE_GAINS_PER_GROUP.items():
+        if group_name not in robot_cfg.actuators:
+            continue
+        actuator_cfg = robot_cfg.actuators[group_name]
+        actuator_cfg.stiffness = {jn: g["stiffness"] for jn, g in per_joint_gains.items()}
+        actuator_cfg.damping = {jn: g["damping"] for jn, g in per_joint_gains.items()}
+        actuator_cfg.armature = {jn: g["armature"] for jn, g in per_joint_gains.items()}
 
 
 @configclass
@@ -665,9 +781,22 @@ class G1WBCPinkActionCfg:
 
 @configclass
 class G1WBCAgilePinkActionCfg:
-    """Action specifications for the MDP, for G1 AGILE WBC with PINK IK upper body."""
+    """Action specifications for the MDP, for G1 AGILE WBC with PINK IK upper body.
 
-    g1_action: ActionTermCfg = G1DecoupledWBCPinkActionCfg(asset_name="robot", joint_names=[".*"], wbc_version="agile")
+    The AGILE recurrent lower-body policy only drives the 12 leg joints (it does not
+    move waist_yaw/roll/pitch -- those slots stay at zero target from the WBC). To give
+    the upper-body PINK IK more reach, we extend its active joint set to include
+    ``waist_roll_joint`` and ``waist_pitch_joint`` (waist_yaw stays fixed because the
+    AGILE policy expects it at zero).
+    """
+
+    g1_action: ActionTermCfg = G1DecoupledWBCPinkActionCfg(
+        asset_name="robot",
+        joint_names=[".*"],
+        wbc_version="agile",
+        upperbody_active_joint_groups=["arms"],
+        upperbody_extra_active_joints=["waist_roll_joint", "waist_yaw_joint", "waist_pitch_joint"],
+    )
 
 
 @configclass
