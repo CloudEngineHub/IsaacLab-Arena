@@ -15,7 +15,6 @@ Verifies:
 - ``reset`` propagates to the client;
 - a failing ping during construction raises ``ConnectionError``.
 """
-# TODO(xinjieyao, 2026-04-27):will be moved to base container test when removing deprecated local policy
 
 from __future__ import annotations
 
@@ -25,6 +24,8 @@ import yaml
 from typing import Any
 
 import pytest
+
+pytestmark = pytest.mark.gr00t_policy
 
 # NOTE: ``isaaclab_arena.policy.action_scheduling`` is imported lazily inside
 # tests/helpers (mirrors ``test_action_scheduling.py``). Importing it at module
