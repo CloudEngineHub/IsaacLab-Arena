@@ -77,6 +77,14 @@ _USD_ORIGIN_ABOVE_BOTTOM_M: dict[str, float] = {
 TUNED_PICK_UP_OBJECT_NAME = "apple_01_objaverse_robolab"
 TUNED_DESTINATION_NAME = "clay_plates_hot3d_robolab"
 
+# Per-asset uniform scale matching the tuned pick-up / destination pair. Assets not in
+# this table spawn at scale=(1.0, 1.0, 1.0) with a one-shot warning so the user knows
+# the resulting size may need visual verification.
+_TUNED_SCALES: dict[str, tuple[float, float, float]] = {
+    TUNED_PICK_UP_OBJECT_NAME: (0.009, 0.009, 0.009),
+    TUNED_DESTINATION_NAME: (0.5, 0.5, 0.5),
+}
+
 
 def _shelf_spawn_z(asset_name: str) -> float:
     """Return the env-local Z to spawn ``asset_name`` flush on the shelf surface.
@@ -94,6 +102,18 @@ def _shelf_spawn_z(asset_name: str) -> float:
         stacklevel=2,
     )
     return SHELF_SURFACE_Z + SHELF_AIRGAP
+
+
+def _asset_scale(asset_name: str) -> tuple[float, float, float]:
+    """Return the tuned uniform scale for ``asset_name``, or 1.0 with a warning."""
+    if asset_name in _TUNED_SCALES:
+        return _TUNED_SCALES[asset_name]
+    warnings.warn(
+        "galileo_g1_static_pick_and_place: no measured scale for "
+        f"'{asset_name}'; spawning at scale=(1.0, 1.0, 1.0). Verify visually.",
+        stacklevel=2,
+    )
+    return (1.0, 1.0, 1.0)
 
 
 @register_environment
@@ -115,8 +135,8 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
         # Reuse the locomanip background USD: it bakes in lighting and provides the same
         # shelf-in-front-of-robot geometry the locomanip env was tuned against.
         background = self.asset_registry.get_asset_by_name("galileo_locomanip")()
-        pick_up_object = self.asset_registry.get_asset_by_name(args_cli.object)(scale=(0.009, 0.009, 0.009))
-        destination = self.asset_registry.get_asset_by_name(args_cli.destination)(scale=(0.5, 0.5, 0.5))
+        pick_up_object = self.asset_registry.get_asset_by_name(args_cli.object)(scale=_asset_scale(args_cli.object))
+        destination = self.asset_registry.get_asset_by_name(args_cli.destination)(scale=_asset_scale(args_cli.destination))
         embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(enable_cameras=args_cli.enable_cameras)
 
         if args_cli.teleop_device is not None:
