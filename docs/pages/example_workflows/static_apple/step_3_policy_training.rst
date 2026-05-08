@@ -140,7 +140,7 @@ The launcher runs inside the standalone repo's ``uv``-managed venv. Replace
      --base-model-path nvidia/GR00T-N1.7-3B \
      --dataset-path $DATASET_DIR/arena_g1_static_apple_dataset_recorded/lerobot \
      --output-dir $MODELS_DIR/static_apple_n17_finetune \
-     --modality-config-path /path/to/IsaacLab-Arena/isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_config.py \
+     --modality-config-path /path/to/IsaacLab-Arena/isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_gr00t_n_1_7_config.py \
      --embodiment-tag new_embodiment \
      --global-batch-size 96 \
      --max-steps 20000 \
