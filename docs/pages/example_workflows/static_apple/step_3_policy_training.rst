@@ -17,16 +17,17 @@ This page assumes you have a successful recording at
 :doc:`step_2_teleoperation`.
 
 
-Step 1: Convert to LeRobot Format (Arena container)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Step 1: Convert to LeRobot Format
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-GR00T N1.7 consumes datasets in LeRobot format. Arena's converter is decoupled from the GR00T
-package version (the LeRobot output is GR00T-version-agnostic), so the conversion step still runs
-inside the standard **Base** Arena container.
+GR00T N1.7 consumes datasets in LeRobot format. The converter pulls in a few GR00T-side
+dependencies (LeRobot's dataset writer, GR00T's modality types), so run this step from the
+**GR00T** Arena container rather than the Base one. The LeRobot output itself is
+GR00T-version-agnostic.
 
-**Docker Container**: Base (see :doc:`../../quickstart/installation` for more details)
+**Docker Container**: Base + GR00T (see :doc:`../imitation_learning/index` for more details)
 
-:docker_run_default:
+:docker_run_gr00t:
 
 Once inside the container, set the dataset directory:
 
