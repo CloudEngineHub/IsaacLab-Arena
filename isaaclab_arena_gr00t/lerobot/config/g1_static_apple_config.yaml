@@ -19,7 +19,8 @@ task_index: 3
 # rename here if you choose a different --dataset_file in step 2).
 hdf5_name: "arena_g1_static_apple_dataset_recorded.hdf5"
 
-# Mimic-generated HDF5 datafield names
+# HDF5 datafield names (matches the schema written by record_demos.py +
+# isaaclab_arena.utils.isaaclab_utils.recorders.ArenaEnvRecorderManagerCfg)
 state_name_sim: "robot_joint_pos"
 left_eef_pos_name_sim: "left_eef_pos"
 left_eef_quat_name_sim: "left_eef_quat"

@@ -94,21 +94,6 @@ who specifically want HOMIE.
                         rotation_xyzw=(0.0, 0.0, 0.0, 1.0))
                )
 
-               # When --mimic is active, register patch_recorders() so the dataset
-               # writes obs_buf["action"] under the "action" key. We deliberately skip
-               # patch_generate() (the locomanip-specific nav-aware DataGenerator); the
-               # static env never navigates so the default generate is correct. Both
-               # pink variants are accepted so the recorder fires for either WBC
-               # backend (AGILE end-to-end velocity policy by default; HOMIE if the
-               # user passes --embodiment g1_wbc_pink).
-               if (
-                   args_cli.embodiment in ("g1_wbc_pink", "g1_wbc_agile_pink")
-                   and getattr(args_cli, "mimic", False)
-                   and not hasattr(args_cli, "auto")
-               ):
-                   from isaaclab_arena.utils.locomanip_mimic_patch import patch_recorders
-                   patch_recorders()
-
                def _build_static_mimic_cfg(arm_mode, extra_channels):
                    if arm_mode != ArmMode.DUAL_ARM:
                        raise ValueError(f"Static env only supports DUAL_ARM; got {arm_mode}")
@@ -215,37 +200,16 @@ See :doc:`../../concepts/scene/index` for scene composition details.
     )
 
 The static env uses ``PickAndPlaceTask`` directly and injects ``StaticPickAndPlaceMimicEnvCfg``
-through ``mimic_env_cfg_factory`` rather than carrying a task subclass whose only job was to
-swap which Mimic config class got returned. The cfg subclass survives because it still encodes
-the static-specific subtask shape: ``subtask_configs["body"]`` and ``subtask_configs["left"]``
-are each collapsed to a single no-op subtask (see Step 3 for the rationale). The factory closure
-also rejects non-dual-arm callers because the cfg's right-arm 3-step / collapsed-left / collapsed-body
-layout is dual-arm-only -- a single-arm caller would silently get a misshapen cfg otherwise.
+through ``mimic_env_cfg_factory``. The cfg encodes the static-specific subtask shape:
+``subtask_configs["body"]`` and ``subtask_configs["left"]`` are each collapsed to a single
+no-op subtask (see Step 3 for the rationale). The factory closure rejects non-dual-arm callers
+because the cfg's right-arm 3-step / collapsed-left / collapsed-body layout is dual-arm-only --
+a single-arm caller would silently get a misshapen cfg otherwise.
 
 See :doc:`../../concepts/task/index` for task creation details.
 
 
-**5. Conditionally Patch Mimic Recorders**
-
-.. code-block:: python
-
-   if (
-       args_cli.embodiment in ("g1_wbc_pink", "g1_wbc_agile_pink")
-       and getattr(args_cli, "mimic", False)
-       and not hasattr(args_cli, "auto")
-   ):
-       from isaaclab_arena.utils.locomanip_mimic_patch import patch_recorders
-       patch_recorders()
-
-When ``--mimic`` is active we register ``PostStepFlatPolicyObservationsRecorder`` so generated
-datasets contain the ``"action"`` observation key the converter / training pipeline expects. The
-gate accepts both pink variants (``g1_wbc_agile_pink`` by default; ``g1_wbc_pink`` as a HOMIE
-override) so the recorder fires for either WBC backend. Unlike the loco-manip env, we do **not**
-call ``patch_g1_locomanip_mimic()`` — that helper *also* swaps in a navigation-aware
-``DataGenerator.generate``, which would fight against the standing-only WBC behaviour we want here.
-
-
-**6. Create the IsaacLab Arena Environment**
+**5. Create the IsaacLab Arena Environment**
 
 .. code-block:: python
 
@@ -265,22 +229,16 @@ Validate Environment with Automated Tests
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 A dedicated pytest module covers the static apple-to-plate environment. It asserts that
-(i) the task does not terminate when the apple is at its initial pose, (ii) the success
-termination fires after the apple is teleported above the plate and allowed to settle,
-(iii) the static Mimic config correctly references both the apple object and plate
-destination, and (iv) the body subtask group is collapsed to a single no-op (with no
-``subtask_term_signal``) so Mimic does not deadlock waiting for navigation phases that
-never fire in this env.
+(i) the task does not terminate when the apple is at its initial pose, and (ii) the success
+termination fires after the apple is teleported above the plate and allowed to settle.
 
 .. code-block:: bash
 
    python -m pytest isaaclab_arena/tests/test_g1_static_pick_and_place.py -v
 
-You should see all four tests pass. The simulation-based tests
-(``test_initial_state_not_terminated`` and ``test_apple_on_plate_succeeds``) run headless with cameras
-enabled and take around a minute each; the two Mimic config tests are lightweight and complete in a
-few seconds. This is the fastest way to confirm the scene, task, and Mimic config are wired up
-correctly without requiring teleoperation hardware.
+You should see both tests pass. They run headless with cameras enabled and take around a
+minute each. This is the fastest way to confirm the scene, task, and termination logic are
+wired up correctly without requiring teleoperation hardware.
 
 .. note::
 

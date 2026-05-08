@@ -3,24 +3,12 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Mimic env cfg for the static-base G1 (WBC stands the robot in place; no nav).
+"""Static-base G1 pick-and-place env cfg subclass (WBC stands the robot in place; no nav).
 
-There is no ``StaticPickAndPlaceTask`` class: the static env reuses
-``PickAndPlaceTask`` directly and injects this cfg through
-``PickAndPlaceTask(mimic_env_cfg_factory=...)``. See
-``galileo_g1_static_pick_and_place_environment.py`` for the closure that
-constructs ``StaticPickAndPlaceMimicEnvCfg`` with the env's pickup +
-destination names. Inheriting a task subclass purely to swap which Mimic cfg
-class gets returned was the pattern cvolk's
-``cvolk/refactor-task-mimic-channels`` branch deleted; this file follows that
-convention for the static variant.
-
-The cfg subclass ``StaticPickAndPlaceMimicEnvCfg`` survives because it still
-encodes the static-specific arm and body subtask shapes (left + body collapsed
-to single no-op subtasks) that ``G1PickAndPlaceMimicEnvCfg`` does not provide:
-the parent encodes the locomanip 4-phase nav body sequence and a left-arm
-subtask sequence, neither of which fires in the static env where the base
-never moves and the left arm hangs idle.
+Provides the static-specific subtask shape (left + body channels collapsed to no-ops)
+on top of ``G1PickAndPlaceMimicEnvCfg``. Used by
+``galileo_g1_static_pick_and_place_environment.py`` via
+``PickAndPlaceTask(mimic_env_cfg_factory=...)``.
 """
 
 from isaaclab.envs.mimic_env_cfg import SubTaskConfig
@@ -31,32 +19,22 @@ from isaaclab_arena.tasks.pick_and_place_task import G1PickAndPlaceMimicEnvCfg
 
 @configclass
 class StaticPickAndPlaceMimicEnvCfg(G1PickAndPlaceMimicEnvCfg):
-    """Mimic env cfg for the static-base G1 pick-and-place task.
+    """Static-base G1 pick-and-place env cfg.
 
     Inherits the right-arm subtask sequence (``idle_right`` -> ``grasp_and_idle_right``
-    -> final) and all datagen knobs from ``G1PickAndPlaceMimicEnvCfg`` so the
-    generated dataset's right-arm semantics line up with the locomanip variant. Three
-    overrides:
+    -> final) from ``G1PickAndPlaceMimicEnvCfg``. Three overrides for the static variant:
 
-    1. ``datagen_config.name`` is rebranded ``static_pick_and_place_*`` so generated
-       datasets are not confused with locomanip ones in the converter / training pipeline.
+    1. ``datagen_config.name`` is rebranded ``static_pick_and_place_*`` to disambiguate
+       the static cfg from the locomanip one.
     2. ``subtask_configs["body"]`` is replaced with a single subtask spanning the whole
-       episode (no ``subtask_term_signal``, so it never triggers segmentation). The
-       locomanip version expects the env to emit ``navigate_to_table`` /
-       ``navigate_turn_inplace`` / ``navigate_to_bin`` term signals as the robot drives
-       between waypoints; in the static env the robot never moves its base, so those
-       signals never fire and Mimic would deadlock waiting for them. Collapsing to a
-       single no-op subtask lets Mimic treat the body channel as one homogeneous block
-       (the recorded body actions are constant ``stand-in-place`` commands anyway).
+       episode (no ``subtask_term_signal``). The locomanip version expects the env to
+       emit ``navigate_to_table`` / ``navigate_turn_inplace`` / ``navigate_to_bin`` term
+       signals as the robot drives between waypoints; in the static env the robot never
+       moves its base, so those signals never fire (the recorded body actions are
+       constant ``stand-in-place`` commands).
     3. ``subtask_configs["left"]`` is also collapsed to a single no-op subtask. Apple-to-
        plate on a single shelf is a one-arm pinch-grasp task: the right arm reaches,
-       grasps, and places while the left arm just hangs. Forcing the user to mark
-       ``idle_left`` and ``grasp_and_idle_left`` boundaries during ``annotate_demos.py``
-       is annotation theatre -- the left arm never actually grasps anything. The collapse
-       drops the per-arm annotation count from 4 marks (2 right + 2 left) to 2 (right
-       only) and encodes the task's right-arm-only nature in the cfg itself. Mimic still
-       generates the left arm's trajectory verbatim from the source demo (single subtask,
-       no segmentation, no nearest-neighbor switch).
+       grasps, and places while the left arm just hangs.
 
     The right arm keeps the locomanip's 3-subtask sequence with ``object_ref=apple``
     everywhere; the place/final subtask's ``object_ref`` is technically the destination

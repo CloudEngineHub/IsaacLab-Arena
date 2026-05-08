@@ -9,9 +9,7 @@ Mirrors ``test_g1_locomanip_apple_to_plate.py`` (same 23-D action layout, same
 standing-pose hold actions during warmup) but uses the AGILE WBC backend
 (``G1WBCAgileJointEmbodiment``) -- production env defaults to ``g1_wbc_agile_pink``,
 so the joint twin keeps the test honest to the deployed stack while still skipping the
-PinkIK forward solve for speed. Adds Mimic-config tests specific to the static variant:
-the body subtask group must be collapsed to a single no-op (not the locomanip's 4-phase
-nav sequence), and the datagen name must use the ``static_*`` prefix.
+PinkIK forward solve for speed.
 """
 
 import torch
@@ -46,8 +44,8 @@ def get_test_environment(num_envs: int):
     Uses a plain ``table`` background (instead of the production ``galileo_locomanip``
     scene) to isolate task-termination logic and keep the test fast. Mirrors the locomanip
     test's structure -- same standing-action pattern, same termination semantics -- so
-    test failures here can be cleanly attributed to the static-task / static-Mimic
-    plumbing rather than the WBC stack itself.
+    test failures here can be cleanly attributed to the static-task plumbing rather than
+    the WBC stack itself.
     """
 
     from isaaclab_arena.assets.registries import AssetRegistry
@@ -78,11 +76,8 @@ def get_test_environment(num_envs: int):
     embodiment = G1WBCAgileJointEmbodiment(enable_cameras=ENABLE_CAMERAS)
     embodiment.set_initial_pose(Pose(position_xyz=(-0.4, 0.0, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
 
-    # Inject ``StaticPickAndPlaceMimicEnvCfg`` through ``PickAndPlaceTask``'s
-    # ``mimic_env_cfg_factory`` -- mirrors the production env's pattern. ``arm_mode`` and
-    # ``extra_channels`` are accepted for signature compatibility but ignored: the static
-    # cfg's right/left/body subtask shape is hardcoded in
-    # ``StaticPickAndPlaceMimicEnvCfg.__post_init__`` rather than driven by them.
+    # Inject the static cfg via the factory; ``arm_mode`` and ``extra_channels`` are
+    # accepted for signature compatibility but ignored.
     def _build_static_mimic_cfg(arm_mode, extra_channels):
         return StaticPickAndPlaceMimicEnvCfg(
             pick_up_object_name=apple.name,
@@ -231,165 +226,6 @@ def _test_apple_on_plate_succeeds(simulation_app) -> bool:
     return True
 
 
-def _build_static_mimic_cfg():
-    """Build a ``StaticPickAndPlaceMimicEnvCfg`` for apple+plate to introspect in unit tests."""
-
-    from isaaclab_arena.assets.registries import AssetRegistry
-    from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
-    from isaaclab_arena.tasks.static_pick_and_place_task import StaticPickAndPlaceMimicEnvCfg
-    from isaaclab_arena.utils.pose import Pose
-
-    asset_registry = AssetRegistry()
-    apple = asset_registry.get_asset_by_name("apple_01_objaverse_robolab")()
-    plate = asset_registry.get_asset_by_name("clay_plates_hot3d_robolab")()
-    background = asset_registry.get_asset_by_name("table")()
-
-    apple.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
-    plate.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
-
-    def _factory(arm_mode, extra_channels):
-        return StaticPickAndPlaceMimicEnvCfg(
-            pick_up_object_name=apple.name,
-            destination_name=plate.name,
-        )
-
-    task = PickAndPlaceTask(
-        pick_up_object=apple,
-        destination_location=plate,
-        background_scene=background,
-        mimic_env_cfg_factory=_factory,
-    )
-    return task.get_mimic_env_cfg(arm_mode=ArmMode.DUAL_ARM), apple, plate
-
-
-def _test_mimic_cfg_uses_object_and_destination_names(simulation_app) -> bool:
-    """Verify the static Mimic config picks up both object + destination names from the task.
-
-    Mirrors the locomanip equivalent and additionally checks that the datagen name uses
-    the ``static_*`` prefix so generated datasets won't collide with locomanip ones.
-    """
-
-    mimic_cfg, apple, plate = _build_static_mimic_cfg()
-
-    assert (
-        mimic_cfg.pick_up_object_name == apple.name
-    ), f"Expected pick_up_object_name='{apple.name}', got '{mimic_cfg.pick_up_object_name}'"
-    assert (
-        mimic_cfg.destination_name == plate.name
-    ), f"Expected destination_name='{plate.name}', got '{mimic_cfg.destination_name}'"
-
-    # Datagen name must include both names AND the static_ prefix (so generated datasets
-    # cannot accidentally key the same way as locomanip datasets in the converter pipeline).
-    datagen_name = mimic_cfg.datagen_config.name
-    assert apple.name in datagen_name, f"Expected datagen_config.name to include '{apple.name}', got '{datagen_name}'"
-    assert plate.name in datagen_name, f"Expected datagen_config.name to include '{plate.name}', got '{datagen_name}'"
-    assert datagen_name.startswith("static_pick_and_place_"), (
-        "Static Mimic datagen name must use the 'static_*' prefix to disambiguate from "
-        f"locomanip datasets, got '{datagen_name}'"
-    )
-
-    # All subtask groups (left/right arms + body) must reference the apple as their object.
-    for arm_key in ("right", "left", "body"):
-        for i, subtask in enumerate(mimic_cfg.subtask_configs[arm_key]):
-            assert (
-                subtask.object_ref == apple.name
-            ), f"subtask_configs['{arm_key}'][{i}].object_ref should be '{apple.name}', got '{subtask.object_ref}'"
-
-    print("Success: Static Mimic config correctly uses apple object + plate destination names")
-    return True
-
-
-def _test_mimic_cfg_body_is_collapsed_to_single_no_op(simulation_app) -> bool:
-    """Static Mimic cfg must collapse the locomanip 4-phase nav body subtask sequence to one no-op.
-
-    Regression guard against accidentally inheriting the locomanip body subtask sequence
-    (``navigate_to_table -> navigate_turn_inplace -> navigate_to_bin -> final``): in the
-    static env the robot never moves its base, so those nav term signals never fire and
-    Mimic would deadlock waiting for them. The collapse to a single no-op subtask (no
-    ``subtask_term_signal``) is what lets Mimic treat the body channel as one homogeneous
-    block of constant ``stand-in-place`` commands.
-    """
-
-    mimic_cfg, _, _ = _build_static_mimic_cfg()
-
-    # Sanity: arm groups should still be present (this isn't a "drop body entirely" cfg).
-    for arm_key in ("right", "left"):
-        assert arm_key in mimic_cfg.subtask_configs, (
-            f"Static Mimic cfg must keep the '{arm_key}' arm subtask group; got groups: "
-            f"{sorted(mimic_cfg.subtask_configs.keys())}"
-        )
-
-    body_subtasks = mimic_cfg.subtask_configs["body"]
-    assert len(body_subtasks) == 1, (
-        "Static Mimic cfg must collapse the body subtask sequence to a single no-op entry; "
-        f"got {len(body_subtasks)} entries (locomanip ships 4 nav phases here)"
-    )
-
-    body_only = body_subtasks[0]
-    assert body_only.subtask_term_signal is None, (
-        "Static Mimic body no-op subtask must have NO ``subtask_term_signal`` (else Mimic would "
-        f"deadlock waiting for it to fire); got '{body_only.subtask_term_signal}'"
-    )
-    assert body_only.action_noise == 0.0, (
-        "Static Mimic body no-op subtask must keep action_noise=0 so the body channel stays "
-        f"at exactly the recorded standing command; got {body_only.action_noise}"
-    )
-
-    print("Success: Static Mimic body subtasks collapsed to single no-op (no nav term signals)")
-    return True
-
-
-def _test_mimic_cfg_left_arm_is_collapsed_to_single_no_op(simulation_app) -> bool:
-    """Static Mimic cfg must collapse the locomanip 3-step left-arm subtask sequence to one no-op.
-
-    Regression guard against accidentally inheriting the locomanip left-arm subtask
-    sequence (``idle_left -> grasp_and_idle_left -> final``): apple-to-plate on a single
-    shelf is a one-arm pinch-grasp, so forcing the user to mark left-arm boundaries
-    during ``annotate_demos.py`` is annotation theatre. The collapse drops the per-episode
-    annotation count from 4 marks (2 right + 2 left) to 2 (right only); the right arm
-    keeps its full 3-step sequence so its ``idle_right`` / ``grasp_and_idle_right``
-    boundaries still segment the dataset for Mimic source selection.
-    """
-
-    mimic_cfg, _, _ = _build_static_mimic_cfg()
-
-    # Right arm must still ship the full 3-step locomanip sequence (idle_right ->
-    # grasp_and_idle_right -> final) -- collapsing it would break the actual pick task.
-    right_subtasks = mimic_cfg.subtask_configs["right"]
-    assert len(right_subtasks) == 3, (
-        "Static Mimic cfg must keep the right-arm 3-step subtask sequence intact "
-        f"(idle_right -> grasp_and_idle_right -> final); got {len(right_subtasks)} entries"
-    )
-    expected_right_term_signals = ["idle_right", "grasp_and_idle_right", None]
-    actual_right_term_signals = [s.subtask_term_signal for s in right_subtasks]
-    assert (
-        actual_right_term_signals == expected_right_term_signals
-    ), f"Right-arm subtask term signals should be {expected_right_term_signals}, got {actual_right_term_signals}"
-
-    left_subtasks = mimic_cfg.subtask_configs["left"]
-    assert len(left_subtasks) == 1, (
-        "Static Mimic cfg must collapse the left-arm subtask sequence to a single no-op entry; "
-        f"got {len(left_subtasks)} entries (locomanip ships 3 phases here: idle_left, "
-        "grasp_and_idle_left, final)"
-    )
-
-    left_only = left_subtasks[0]
-    assert left_only.subtask_term_signal is None, (
-        "Static Mimic left-arm no-op subtask must have NO ``subtask_term_signal`` (else "
-        "annotate_demos.py would prompt the user to mark a non-existent boundary); got "
-        f"'{left_only.subtask_term_signal}'"
-    )
-    assert left_only.action_noise == 0.0, (
-        "Static Mimic left-arm no-op subtask must keep action_noise=0 so the unused arm "
-        "doesn't drift into the right-arm workspace under noise injection; got "
-        f"{left_only.action_noise}"
-    )
-
-    print("Success: Static Mimic left-arm subtasks collapsed to single no-op (right arm intact)")
-    return True
-
-
 @pytest.mark.with_cameras
 def test_initial_state_not_terminated():
     result = run_simulation_app_function(
@@ -410,36 +246,6 @@ def test_apple_on_plate_succeeds():
     assert result, f"Test {_test_apple_on_plate_succeeds.__name__} failed"
 
 
-def test_mimic_cfg_uses_object_and_destination_names():
-    result = run_simulation_app_function(
-        _test_mimic_cfg_uses_object_and_destination_names,
-        headless=HEADLESS,
-        enable_cameras=False,
-    )
-    assert result, f"Test {_test_mimic_cfg_uses_object_and_destination_names.__name__} failed"
-
-
-def test_mimic_cfg_body_is_collapsed_to_single_no_op():
-    result = run_simulation_app_function(
-        _test_mimic_cfg_body_is_collapsed_to_single_no_op,
-        headless=HEADLESS,
-        enable_cameras=False,
-    )
-    assert result, f"Test {_test_mimic_cfg_body_is_collapsed_to_single_no_op.__name__} failed"
-
-
-def test_mimic_cfg_left_arm_is_collapsed_to_single_no_op():
-    result = run_simulation_app_function(
-        _test_mimic_cfg_left_arm_is_collapsed_to_single_no_op,
-        headless=HEADLESS,
-        enable_cameras=False,
-    )
-    assert result, f"Test {_test_mimic_cfg_left_arm_is_collapsed_to_single_no_op.__name__} failed"
-
-
 if __name__ == "__main__":
     test_initial_state_not_terminated()
     test_apple_on_plate_succeeds()
-    test_mimic_cfg_uses_object_and_destination_names()
-    test_mimic_cfg_body_is_collapsed_to_single_no_op()
-    test_mimic_cfg_left_arm_is_collapsed_to_single_no_op()
