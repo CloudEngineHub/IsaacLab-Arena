@@ -20,9 +20,9 @@ This page assumes you have a successful recording at
 Step 1: Convert to LeRobot Format (Arena container)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-GR00T N1.7 consumes datasets in LeRobot format. Arena's converter is decoupled from GR00T versions —
-the LeRobot output is N1.6/N1.7-agnostic — so the conversion step still runs inside the standard
-**Base** Arena container.
+GR00T N1.7 consumes datasets in LeRobot format. Arena's converter is decoupled from the GR00T
+package version (the LeRobot output is GR00T-version-agnostic), so the conversion step still runs
+inside the standard **Base** Arena container.
 
 **Docker Container**: Base (see :doc:`../../quickstart/installation` for more details)
 
@@ -81,11 +81,11 @@ The converter is controlled by a config file at
       fps: 50
       chunks_size: 1000
 
-The main differences from the loco-manip box config (``g1_locomanip_config.yaml``) are the
+The main differences from the loco-manipulation box config (``g1_locomanip_config.yaml``) are the
 ``data_root`` / ``hdf5_name`` pointing at the static apple-to-plate dataset and the
 ``language_instruction`` describing the same-shelf placement (no walking, no second table).
 The 43-DoF action layout, embodiment tag, modality template and joint-space configurations are all
-shared with the loco-manip variant — the static workflow does not need its own GR00T embodiment
+shared with the loco-manipulation variant — the static workflow does not need its own GR00T embodiment
 config because the upper-body action channels and observation modalities are identical; only the
 recorded body channel happens to stay at zero throughout each demo.
 
@@ -126,15 +126,15 @@ Training Configuration:
 - **Embodiment tag:** ``new_embodiment`` (case-insensitive; resolved to
   ``EmbodimentTag.NEW_EMBODIMENT`` by ``gr00t``)
 
-To post-train the policy, run the following command **from the standalone Isaac-GR00T checkout**:
+To post-train the policy, run the following command **from the standalone Isaac-GR00T checkout**.
+The launcher runs inside the standalone repo's ``uv``-managed venv. Replace
+``/path/to/IsaacLab-Arena`` with the absolute path to your Arena clone so the
+``--modality-config-path`` argument can register the WBC modality from Arena's source tree.
 
 .. code-block:: bash
 
    cd $ISAAC_GR00T_DIR
 
-   # Run the finetune launcher inside the standalone repo's uv-managed venv.
-   # Replace /path/to/IsaacLab-Arena with the absolute path to your Arena clone so
-   # the --modality-config-path arg can register the WBC modality from Arena's source tree.
    uv run python -m torch.distributed.run --nproc_per_node=8 --standalone \
      gr00t/experiment/launch_finetune.py \
      --base-model-path nvidia/GR00T-N1.7-3B \

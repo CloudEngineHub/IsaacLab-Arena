@@ -54,8 +54,7 @@ def get_test_environment(num_envs: int):
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
-    from isaaclab_arena.tasks.static_pick_and_place_task import StaticPickAndPlaceMimicEnvCfg
+    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask, StaticPickAndPlaceMimicEnvCfg
     from isaaclab_arena.utils.pose import Pose
 
     asset_registry = AssetRegistry()
@@ -76,9 +75,9 @@ def get_test_environment(num_envs: int):
     embodiment = G1WBCAgileJointEmbodiment(enable_cameras=ENABLE_CAMERAS)
     embodiment.set_initial_pose(Pose(position_xyz=(-0.4, 0.0, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
 
-    # Inject the static cfg via the factory; ``arm_mode`` and ``extra_channels`` are
-    # accepted for signature compatibility but ignored.
-    def _build_static_mimic_cfg(arm_mode, extra_channels):
+    # Inject the static cfg via the factory; ``arm_mode`` is accepted for signature
+    # compatibility but ignored.
+    def _build_static_mimic_cfg(arm_mode):
         return StaticPickAndPlaceMimicEnvCfg(
             pick_up_object_name=apple.name,
             destination_name=plate.name,

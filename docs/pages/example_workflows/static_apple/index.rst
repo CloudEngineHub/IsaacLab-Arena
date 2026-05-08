@@ -1,7 +1,7 @@
-G1 Static Apple-to-Plate Task
-=============================
+Unitree G1 Static Apple-to-Plate Task
+=====================================
 
-This example demonstrates the complete workflow for the **G1 static (no-navigation) apple-to-plate task** in Isaac Lab - Arena, covering environment setup and validation, teleoperation data collection (OpenXR with Meta Quest 3 or Pico 4 Ultra), policy post-training directly on the recorded teleop demonstrations, and closed-loop evaluation.
+This example demonstrates the complete workflow for the **Unitree G1 static (no-locomotion) apple-to-plate task** in Isaac Lab - Arena, covering environment setup and validation, teleoperation data collection (OpenXR with Meta Quest 3 or Pico 4 Ultra), policy post-training directly on the recorded teleop demonstrations, and closed-loop evaluation.
 
 The training step uses a **standalone clone of NVIDIA's Isaac-GR00T (N1.7) repository** rather than
 the GR00T submodule pinned inside Arena, and evaluation runs over Arena's
@@ -10,16 +10,16 @@ its own venv, and Arena's client runs the simulation in the standard Arena conta
 server over ZeroMQ. This decoupling means you can iterate on the model side without bumping Arena's
 submodule or rebuilding the GR00T-flavoured Arena container.
 
-This workflow is the no-locomotion sibling of the :doc:`G1 Loco-Manipulation Box Pick and Place Task <../locomanipulation/index>`. The robot stands in place using the same Whole Body Controller (WBC) for balance, but the destination plate sits on the *same* shelf as the apple — within arm's reach — so the lower body never moves. If you want a tabletop manipulation surface for upper-body data collection without the complexity of full-body locomotion, this is the workflow to use.
+This workflow is the no-locomotion sibling of the :doc:`Unitree G1 Loco-Manipulation Box Pick and Place Task <../locomanipulation/index>`. The robot stands in place using the same Whole Body Controller (WBC) for balance, but the destination plate sits on the *same* shelf as the apple — within arm's reach — so the lower body never moves. If you want a tabletop manipulation surface for upper-body data collection without the complexity of full-body locomotion, this is the workflow to use.
 
 Task Overview
 -------------
 
 **Task Name:** ``galileo_g1_static_pick_and_place``
 
-**Task Description:** The G1 humanoid robot stands in front of a shelf and uses its arms to pick up
+**Task Description:** The Unitree G1 humanoid robot stands in front of a shelf and uses its arms to pick up
 an apple and place it onto a plate sitting on the same shelf, within arm's reach. WBC actively
-balances the standing pose (no navigation, no squat), and PinkIK drives the upper body via the same
+balances the standing pose (no locomotion, no squat), and PinkIK drives the upper body via the same
 23-D action layout used by the loco-manipulation variant.
 
 **Key Specifications:**
@@ -76,7 +76,7 @@ each step consumes the artifacts produced by the previous one.
 Prerequisites
 ^^^^^^^^^^^^^
 
-Start the isaaclab docker container
+Start the Isaac Lab Docker container:
 
 :docker_run_default:
 

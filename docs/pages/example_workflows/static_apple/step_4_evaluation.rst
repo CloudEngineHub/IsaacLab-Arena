@@ -2,7 +2,7 @@ Closed-Loop Policy Inference and Evaluation
 -------------------------------------------
 
 This workflow demonstrates running the finetuned GR00T N1.7 policy in closed-loop and evaluating it
-in the Arena G1 Static Apple-to-Plate Task environment using Arena's **server-client (remote-policy)
+in the Arena Unitree G1 Static Apple-to-Plate Task environment using Arena's **server-client (remote-policy)
 architecture**. The server hosts the finetuned checkpoint outside the Arena container; the Arena
 container runs the simulation and queries the server over ZeroMQ.
 
@@ -58,19 +58,19 @@ The server is configured by a YAML at
 
       From the host, with ``$ISAAC_GR00T_DIR`` and Arena both checked out:
 
+      The standalone Isaac-GR00T repo provides the ``gr00t`` package; Arena provides
+      ``gr00t_remote_policy`` and the ZeroMQ server entrypoint. Add Arena to ``PYTHONPATH`` so the
+      standalone venv can import Arena's server modules without installing Arena into the venv.
+      Then launch Arena's server with the static-apple YAML from inside the standalone checkout's
+      ``uv``-managed environment.
+
       .. code-block:: bash
 
-         # 1) Make sure the venv is up to date and includes Arena's server-side modules.
-         #    The standalone repo provides gr00t; Arena provides gr00t_remote_policy + the
-         #    ZeroMQ entrypoint. Add Arena to PYTHONPATH (Arena does not have to be installed).
          cd /path/to/IsaacLab-Arena
          export PYTHONPATH=$PWD:${PYTHONPATH:-}
 
-         # 2) Activate (or `uv run`) the standalone Isaac-GR00T venv. It already has the
-         #    N1.7 `gr00t` package installed.
          cd $ISAAC_GR00T_DIR
 
-         # 3) Launch Arena's server with the static-apple YAML.
          uv run python -m isaaclab_arena.remote_policy.remote_policy_server_runner \
            --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_policy.Gr00tRemoteServerSidePolicy \
            --policy_config_yaml_path /path/to/IsaacLab-Arena/isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml \
@@ -87,13 +87,16 @@ The server is configured by a YAML at
       standalone N1.7 checkout and override ``PYTHONPATH`` so the in-container ``import gr00t``
       resolves to the N1.7 source.
 
+      Set ``ISAAC_GR00T_DIR`` to the standalone N1.7 checkout and ``MODELS_DIR`` to the host
+      directory containing ``static_apple_n17_finetune/``. The server YAML's ``model_path`` must
+      reference the in-container path, so adjust the YAML to point at ``/models/...`` rather than
+      the host path before launching.
+
       .. code-block:: bash
 
-         export ISAAC_GR00T_DIR=/path/to/Isaac-GR00T   # standalone N1.7 checkout
-         export MODELS_DIR=$HOME/models                # contains static_apple_n17_finetune/
+         export ISAAC_GR00T_DIR=/path/to/Isaac-GR00T
+         export MODELS_DIR=$HOME/models
 
-         # The server YAML's `model_path` must reference the in-container path. Adjust the
-         # YAML so it points at /models/... rather than the host path.
          bash docker/run_gr00t_server.sh \
            -m $MODELS_DIR \
            -- \
@@ -158,7 +161,7 @@ machine).
      --embodiment g1_wbc_agile_joint
 
 Note the lower ``--num_steps`` (600 instead of 1500): with no walking phase, a successful
-static apple-to-plate episode runs for roughly half as long as the loco-manip variant.
+static apple-to-plate episode runs for roughly half as long as the loco-manipulation variant.
 
 Note also that the client command does **not** take a ``--policy_config_yaml_path``: the YAML is
 the server's concern, and the client only needs to know where the server is listening. The
@@ -272,11 +275,11 @@ and the number of episodes is more than the single environment evaluation becaus
 
 .. note::
 
-   The same-shelf placement makes the static variant slightly easier than the loco-manip
+   The same-shelf placement makes the static variant slightly easier than the loco-manipulation
    apple-to-plate task: the destination plate is always within arm's reach so the policy
-   never has to recover from a mistimed approach, and there are no intermediate navigation
+   never has to recover from a mistimed approach, and there are no intermediate locomotion
    phases that can drift off-course. The success criterion is the same contact-sensor
-   termination used by the loco-manip variant (``force_threshold=0.5 N``,
+   termination used by the loco-manipulation variant (``force_threshold=0.5 N``,
    ``velocity_threshold=0.1 m/s``), filtered to contacts with the ``--destination`` asset.
    Both values are passed to ``PickAndPlaceTask`` from
    ``isaaclab_arena_environments/galileo_g1_static_pick_and_place_environment.py``; edit the

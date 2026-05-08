@@ -64,8 +64,7 @@ who specifically want HOMIE.
                from isaaclab_arena.embodiments.common.arm_mode import ArmMode
                from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
                from isaaclab_arena.scene.scene import Scene
-               from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
-               from isaaclab_arena.tasks.static_pick_and_place_task import StaticPickAndPlaceMimicEnvCfg
+               from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask, StaticPickAndPlaceMimicEnvCfg
                from isaaclab_arena.utils.pose import Pose
 
                background = self.asset_registry.get_asset_by_name("galileo_locomanip")()
@@ -94,7 +93,7 @@ who specifically want HOMIE.
                         rotation_xyzw=(0.0, 0.0, 0.0, 1.0))
                )
 
-               def _build_static_mimic_cfg(arm_mode, extra_channels):
+               def _build_static_mimic_cfg(arm_mode):
                    if arm_mode != ArmMode.DUAL_ARM:
                        raise ValueError(f"Static env only supports DUAL_ARM; got {arm_mode}")
                    return StaticPickAndPlaceMimicEnvCfg(
@@ -137,7 +136,7 @@ The static workflow shares the ``galileo_locomanip`` background with the loco-ma
 on purpose: the lighting, shelf geometry and 23-D action layout are already tuned, so the only
 thing that changes is *where* the destination sits and which lower-body WBC backend balances the
 robot. The default ``g1_wbc_agile_pink`` embodiment swaps HOMIE's stand+walk pair for AGILE's
-single end-to-end velocity policy, which is a better fit for a no-nav task; ``g1_wbc_pink`` is
+single end-to-end velocity policy, which is a better fit for a no-locomotion task; ``g1_wbc_pink`` is
 accepted as an override for users who want HOMIE behaviour. ``teleop_device`` is left as ``None``
 when ``--teleop_device`` is not supplied so that scripts like ``replay_demos.py`` and
 ``policy_runner.py`` can launch the same environment without instantiating an XR runtime.
@@ -182,7 +181,7 @@ See :doc:`../../concepts/scene/index` for scene composition details.
 
 .. code-block:: python
 
-    def _build_static_mimic_cfg(arm_mode, extra_channels):
+    def _build_static_mimic_cfg(arm_mode):
         if arm_mode != ArmMode.DUAL_ARM:
             raise ValueError(f"Static env only supports DUAL_ARM; got {arm_mode}")
         return StaticPickAndPlaceMimicEnvCfg(

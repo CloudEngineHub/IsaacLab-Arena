@@ -110,8 +110,7 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
         from isaaclab_arena.embodiments.common.arm_mode import ArmMode
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene
-        from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
-        from isaaclab_arena.tasks.static_pick_and_place_task import StaticPickAndPlaceMimicEnvCfg
+        from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask, StaticPickAndPlaceMimicEnvCfg
         from isaaclab_arena.utils.pose import Pose, PoseRange
 
         # Reuse the locomanip background USD: it bakes in lighting and provides the same
@@ -173,9 +172,8 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
 
         # Validate ``arm_mode`` here because the cfg's hardcoded right + collapsed-left
         # + collapsed-body layout is dual-arm only -- a single-arm caller would silently
-        # get a misshapen cfg otherwise. ``extra_channels`` is accepted for signature
-        # compatibility but ignored.
-        def _build_static_mimic_cfg(arm_mode, extra_channels):
+        # get a misshapen cfg otherwise.
+        def _build_static_mimic_cfg(arm_mode):
             if arm_mode != ArmMode.DUAL_ARM:
                 raise ValueError(
                     f"galileo_g1_static_pick_and_place only supports DUAL_ARM mode; got {arm_mode}. "

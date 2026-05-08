@@ -1,7 +1,7 @@
 Teleoperation Data Collection
 -----------------------------
 
-This workflow covers collecting demonstrations for the G1 static apple-to-plate task using **Meta Quest 3** or **Pico 4 Ultra** supported by `Nvidia IsaacTeleop <https://github.com/NVIDIA/IsaacTeleop>`_.
+This workflow covers collecting demonstrations for the Unitree G1 static apple-to-plate task using **Meta Quest 3** or **Pico 4 Ultra** supported by `Nvidia IsaacTeleop <https://github.com/NVIDIA/IsaacTeleop>`_.
 
 .. admonition:: No teleoperation hardware?
    :class: tip
@@ -16,7 +16,7 @@ This workflow covers collecting demonstrations for the G1 static apple-to-plate 
    `IsaacTeleop Quick Start
    <https://nvidia.github.io/IsaacTeleop/main/getting_started/quick_start.html>`_. Follow Steps 1--4
    below unchanged; the only difference is that Step 3 is done from a desktop browser tab. Because
-   the static task is upper-body-only, IWER drives it noticeably better than the loco-manip
+   the static task is upper-body-only, IWER drives it noticeably better than the loco-manipulation
    variant — you can plausibly complete a few demos with just mouse + keyboard, though a real Quest
    3 still gives much smoother demonstrations.
 
@@ -24,7 +24,7 @@ This workflow covers collecting demonstrations for the G1 static apple-to-plate 
 Step 1: Start the CloudXR Runtime
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-#. On the host machine, configure the firewall to allow CloudXR traffic. The required ports depend on the client type.
+#. On the host machine, configure the firewall to allow CloudXR traffic. The required ports depend on the client type. The example below uses ``ufw`` (Ubuntu); on other distributions use the equivalent firewall tooling (e.g. ``firewalld`` on Fedora/RHEL, ``pf`` on macOS).
 
    .. code-block:: bash
 
@@ -188,7 +188,7 @@ Step 4: Record with the headset device
    #. Move it laterally over the plate.
    #. Open the gripper to release the apple onto the plate.
 
-   Demos for this task should be noticeably shorter than the loco-manip variant (no walk / turn /
+   Demos for this task should be noticeably shorter than the loco-manipulation variant (no walk / turn /
    squat phases), so you can collect 10 successful demos in around 5--10 minutes once the pipeline is
    running.
 
