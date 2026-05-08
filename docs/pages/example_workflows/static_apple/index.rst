@@ -98,8 +98,11 @@ Standalone Isaac-GR00T (N1.7) checkout (used in :doc:`step_3_policy_training` an
     git clone https://github.com/NVIDIA/Isaac-GR00T.git /path/to/Isaac-GR00T
     export ISAAC_GR00T_DIR=/path/to/Isaac-GR00T
 
-    # Create the venv (uv-managed; see the Isaac-GR00T README for alternatives).
+    # Create the venv (uv-managed).
     cd $ISAAC_GR00T_DIR && uv sync
+
+See the `Isaac-GR00T README <https://github.com/NVIDIA/Isaac-GR00T#readme>`_ for alternatives to
+``uv-managed`` environment.
 
 This venv is **separate** from Arena's container. Finetuning and the policy server both run from
 this standalone checkout so you can pick up new GR00T releases (e.g. N1.7 → next) without rebuilding
