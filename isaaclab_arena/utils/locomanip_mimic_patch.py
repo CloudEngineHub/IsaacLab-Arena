@@ -10,8 +10,6 @@ import torch
 import warp as wp
 from isaaclab.envs import SubTaskConstraintType
 from isaaclab.managers import TerminationTermCfg
-from isaaclab.managers.recorder_manager import RecorderTerm, RecorderTermCfg
-from isaaclab.utils import configclass
 from isaaclab_mimic.datagen.waypoint import MultiWaypoint, Waypoint
 
 from isaaclab_arena_g1.g1_whole_body_controller.wbc_policy.policy.action_constants import (
@@ -22,7 +20,6 @@ from isaaclab_arena_g1.g1_whole_body_controller.wbc_policy.policy.action_constan
 
 def patch_recorders():
     from isaaclab.envs.mdp.recorders import PreStepActionsRecorder
-    from isaaclab.envs.mdp.recorders.recorders_cfg import ActionStateRecorderManagerCfg
 
     # Record p-controller generated navigation commands in the action buffer
     def record_pre_step(self):
