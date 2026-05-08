@@ -217,8 +217,8 @@ whether the finetuned policy actually works in the AGILE-joint runtime:
 
 #. **Pick** ``action_horizon`` **deliberately.** The default (40) gives an 800 ms inference chunk at
    50 Hz, which trades responsiveness against compute. For static apple-to-plate (~600 step
-   episodes) 40 is a good default. Going lower (e.g. 20) gives more responsive closed-loop control
-   at the cost of more frequent policy queries; going higher (e.g. 50) is closer to the
+   episodes) 40 is a good default. Going lower (e.g., 20) gives more responsive closed-loop control
+   at the cost of more frequent policy queries; going higher (e.g., 50) is closer to the
    loco-manipulation default. Whichever value you pick, **keep the modality config and the server
    YAML in sync** (see the caution above).
 

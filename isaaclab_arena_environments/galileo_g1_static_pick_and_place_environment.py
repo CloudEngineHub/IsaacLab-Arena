@@ -1,4 +1,4 @@
-# Copyright (c) 2025-2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
 # All rights reserved.
 #
 # SPDX-License-Identifier: Apache-2.0
@@ -107,10 +107,9 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
     name: str = "galileo_g1_static_pick_and_place"
 
     def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
-        from isaaclab_arena.embodiments.common.arm_mode import ArmMode
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene
-        from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask, StaticPickAndPlaceMimicEnvCfg
+        from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
         from isaaclab_arena.utils.pose import Pose, PoseRange
 
         # Reuse the locomanip background USD: it bakes in lighting and provides the same
@@ -170,20 +169,6 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
                 f"{destination_label} on the same shelf next to it."
             )
 
-        # Validate ``arm_mode`` here because the cfg's hardcoded right + collapsed-left
-        # + collapsed-body layout is dual-arm only -- a single-arm caller would silently
-        # get a misshapen cfg otherwise.
-        def _build_static_mimic_cfg(arm_mode):
-            if arm_mode != ArmMode.DUAL_ARM:
-                raise ValueError(
-                    f"galileo_g1_static_pick_and_place only supports DUAL_ARM mode; got {arm_mode}. "
-                    "Single-arm flows would require a separate embodiment with a different action layout."
-                )
-            return StaticPickAndPlaceMimicEnvCfg(
-                pick_up_object_name=pick_up_object.name,
-                destination_name=destination.name,
-            )
-
         scene = Scene(assets=[background, pick_up_object, destination])
         return IsaacLabArenaEnvironment(
             name=self.name,
@@ -198,7 +183,6 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
                 # Mirror the locomanip env's success thresholds so metrics are comparable.
                 force_threshold=0.5,
                 velocity_threshold=0.1,
-                mimic_env_cfg_factory=_build_static_mimic_cfg,
             ),
             teleop_device=teleop_device,
         )

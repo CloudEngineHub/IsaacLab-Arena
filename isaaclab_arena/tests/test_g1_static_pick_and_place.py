@@ -1,4 +1,4 @@
-# Copyright (c) 2025-2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
 # All rights reserved.
 #
 # SPDX-License-Identifier: Apache-2.0
@@ -54,7 +54,7 @@ def get_test_environment(num_envs: int):
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask, StaticPickAndPlaceMimicEnvCfg
+    from isaaclab_arena.tasks.pick_and_place_task import PickAndPlaceTask
     from isaaclab_arena.utils.pose import Pose
 
     asset_registry = AssetRegistry()
@@ -75,14 +75,6 @@ def get_test_environment(num_envs: int):
     embodiment = G1WBCAgileJointEmbodiment(enable_cameras=ENABLE_CAMERAS)
     embodiment.set_initial_pose(Pose(position_xyz=(-0.4, 0.0, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
 
-    # Inject the static cfg via the factory; ``arm_mode`` is accepted for signature
-    # compatibility but ignored.
-    def _build_static_mimic_cfg(arm_mode):
-        return StaticPickAndPlaceMimicEnvCfg(
-            pick_up_object_name=apple.name,
-            destination_name=plate.name,
-        )
-
     scene = Scene(assets=[background, apple, plate])
     # Construct ``PickAndPlaceTask`` with parent default termination thresholds: this test
     # exercises termination semantics, not threshold tuning. The production env keeps the
@@ -94,7 +86,6 @@ def get_test_environment(num_envs: int):
         background_scene=background,
         episode_length_s=30.0,
         task_description="Pick up the apple from the table and place it onto the plate.",
-        mimic_env_cfg_factory=_build_static_mimic_cfg,
     )
 
     isaaclab_arena_environment = IsaacLabArenaEnvironment(
