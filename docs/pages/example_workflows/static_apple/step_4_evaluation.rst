@@ -48,79 +48,33 @@ The server is configured by a YAML at
 
       task_mode_name: g1_locomanipulation
 
-.. tab-set::
 
-   .. tab-item:: Option A: Standalone Isaac-GR00T venv (recommended)
+Run the server **outside Docker** in the standalone Isaac-GR00T (N1.7) venv created in
+:doc:`index`. This is the simplest setup once the venv exists: no container build, no
+``GROOT_DEPS_DIR`` overrides, just the standalone repo's own dependencies.
 
-      Run the server **outside Docker** in the standalone Isaac-GR00T (N1.7) venv created in
-      :doc:`index`. This is the simplest setup once the venv exists: no container build, no
-      ``GROOT_DEPS_DIR`` overrides, just the standalone repo's own dependencies.
+From the host, with ``$ISAAC_GR00T_DIR`` and Arena both checked out:
 
-      From the host, with ``$ISAAC_GR00T_DIR`` and Arena both checked out:
+The standalone Isaac-GR00T repo provides the ``gr00t`` package; Arena provides
+``gr00t_remote_policy`` and the ZeroMQ server entrypoint. Add Arena to ``PYTHONPATH`` so the
+standalone venv can import Arena's server modules without installing Arena into the venv.
+Then launch Arena's server with the static-apple YAML from inside the standalone checkout's
+``uv``-managed environment.
 
-      The standalone Isaac-GR00T repo provides the ``gr00t`` package; Arena provides
-      ``gr00t_remote_policy`` and the ZeroMQ server entrypoint. Add Arena to ``PYTHONPATH`` so the
-      standalone venv can import Arena's server modules without installing Arena into the venv.
-      Then launch Arena's server with the static-apple YAML from inside the standalone checkout's
-      ``uv``-managed environment.
+.. code-block:: bash
 
-      .. code-block:: bash
+   export ISAAC_GR00T_DIR=/path/to/Isaac-GR00T
+   cd /path/to/IsaacLab-Arena
+   export PYTHONPATH=$PWD:${PYTHONPATH:-}
 
-         cd /path/to/IsaacLab-Arena
-         export PYTHONPATH=$PWD:${PYTHONPATH:-}
+   uv run --project $ISAAC_GR00T_DIR python -m isaaclab_arena.remote_policy.remote_policy_server_runner \
+      --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_policy.Gr00tRemoteServerSidePolicy \
+      --policy_config_yaml_path /path/to/IsaacLab-Arena/isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml \
+      --host 0.0.0.0 \
+      --port 5555
 
-         cd $ISAAC_GR00T_DIR
-
-         uv run python -m isaaclab_arena.remote_policy.remote_policy_server_runner \
-           --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_policy.Gr00tRemoteServerSidePolicy \
-           --policy_config_yaml_path /path/to/IsaacLab-Arena/isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml \
-           --host 0.0.0.0 \
-           --port 5555
-
-      The server prints ``[Gr00tRemoteServerSidePolicy] config:`` followed by the parsed YAML and
-      then ``listening on 0.0.0.0:5555`` once it is ready for clients.
-
-   .. tab-item:: Option B: GR00T Server Docker (with N1.7 mount)
-
-      The Arena GR00T server image (``docker/Dockerfile.gr00t_server``) bakes Arena's pinned
-      ``submodules/Isaac-GR00T`` (N1.6). To serve an N1.7 finetune from this image, mount your
-      standalone N1.7 checkout and override ``PYTHONPATH`` so the in-container ``import gr00t``
-      resolves to the N1.7 source.
-
-      Set ``ISAAC_GR00T_DIR`` to the standalone N1.7 checkout and ``MODELS_DIR`` to the host
-      directory containing ``static_apple_n17_finetune/``. The server YAML's ``model_path`` must
-      reference the in-container path, so adjust the YAML to point at ``/models/...`` rather than
-      the host path before launching.
-
-      .. code-block:: bash
-
-         export ISAAC_GR00T_DIR=/path/to/Isaac-GR00T
-         export MODELS_DIR=$HOME/models
-
-         bash docker/run_gr00t_server.sh \
-           -m $MODELS_DIR \
-           -- \
-           --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_policy.Gr00tRemoteServerSidePolicy \
-           --policy_config_yaml_path /workspace/isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml
-
-      To override the bundled N1.6 ``gr00t`` package with the standalone N1.7 source you mounted,
-      add a bind mount for the standalone repo and prepend it to ``PYTHONPATH`` inside the
-      container. The simplest way is to invoke ``docker run`` directly instead of
-      ``run_gr00t_server.sh``:
-
-      .. code-block:: bash
-
-         docker run --rm --gpus all --net host \
-           -v $MODELS_DIR:/models \
-           -v $ISAAC_GR00T_DIR:/opt/isaac_gr00t_n17 \
-           -e PYTHONPATH=/opt/isaac_gr00t_n17:/workspace \
-           gr00t_policy_server:latest \
-           --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_policy.Gr00tRemoteServerSidePolicy \
-           --policy_config_yaml_path /workspace/isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml
-
-      This is more brittle than Option A because the standalone N1.7 venv's wheel set may not
-      match exactly what the Arena server image installs. Prefer Option A unless you specifically
-      need the containerized server.
+The server prints ``[Gr00tRemoteServerSidePolicy] config:`` followed by the parsed YAML and
+then ``listening on 0.0.0.0:5555`` once it is ready for clients.
 
 
 Step 1: Run Single Environment Evaluation (Arena container)
@@ -179,8 +133,8 @@ by the quality of post-trained policy, the quality of the dataset, and number of
 
    [Rank 0/1] Metrics: {'success_rate': 1.0, 'num_episodes': 1}
 
-Step 2: Run Parallel Environments Evaluation
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Run Parallel Environments Evaluation (Optional)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Parallel evaluation of the policy in multiple parallel environments is also supported by the policy
 runner. Both tabs below assume the server from Step 0 is still running.
