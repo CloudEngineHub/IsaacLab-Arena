@@ -136,7 +136,9 @@ class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
         # shelf-in-front-of-robot geometry the locomanip env was tuned against.
         background = self.asset_registry.get_asset_by_name("galileo_locomanip")()
         pick_up_object = self.asset_registry.get_asset_by_name(args_cli.object)(scale=_asset_scale(args_cli.object))
-        destination = self.asset_registry.get_asset_by_name(args_cli.destination)(scale=_asset_scale(args_cli.destination))
+        destination = self.asset_registry.get_asset_by_name(args_cli.destination)(
+            scale=_asset_scale(args_cli.destination)
+        )
         embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(enable_cameras=args_cli.enable_cameras)
 
         if args_cli.teleop_device is not None:
