@@ -36,7 +36,7 @@ The server is configured by a YAML at
       embodiment_tag: NEW_EMBODIMENT
 
       video_backend: decord
-      modality_config_path: isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_config.py
+      modality_config_path: isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_gr00t_n_1_7_config.py
 
       policy_joints_config_path: isaaclab_arena_gr00t/embodiments/g1/gr00t_43dof_joint_space.yaml
       action_joints_config_path: isaaclab_arena_gr00t/embodiments/g1/43dof_joint_space.yaml

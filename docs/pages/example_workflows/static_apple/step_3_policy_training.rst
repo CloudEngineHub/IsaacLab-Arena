@@ -165,7 +165,7 @@ The launcher runs inside the standalone repo's ``uv``-managed venv. Replace
 .. note::
 
    The ``--modality-config-path`` argument points to Arena's
-   ``isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_config.py`` so that
+   ``isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_gr00t_n_1_7_config.py`` so that
    ``register_modality_config(...)`` runs and ``new_embodiment`` resolves to the WBC modality
    layout (5 state keys + 7 action keys). This is the **same file** the server consumes at
    evaluation time, so it is the single source of truth for the modality layout.
@@ -178,8 +178,8 @@ The launcher runs inside the standalone repo's ``uv``-managed venv. Replace
    step trains. If you want a different horizon, change **both**:
 
    1. ``delta_indices=list(range(N))`` in
-      ``isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_config.py`` for the action modality
-      (controls what the LeRobot loader feeds the model during training).
+      ``isaaclab_arena_gr00t/embodiments/g1/g1_sim_wbc_data_gr00t_n_1_7_config.py`` for the action
+      modality (controls what the LeRobot loader feeds the model during training).
    2. ``action_horizon: N`` and ``action_chunk_length: N`` (≤ ``action_horizon``) in the
       server-side YAML at
       ``isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml``.
@@ -209,17 +209,17 @@ whether the finetuned policy actually works in the AGILE-joint runtime:
    ``g1_wbc_agile_joint`` would force the human teleoperator to drive 43 joint targets directly,
    which is impractical and not what eval uses anyway.
 
-#. **Use Arena's** ``g1_sim_wbc_data_config.py`` **for** ``--modality-config-path``\ **.** This
-   registers the modality with ``NEW_EMBODIMENT`` and is the same file the Arena server consumes at
-   eval. Don't fork a static-only modality file — keeping a single source of truth prevents
-   skew between training and serving.
+#. **Use Arena's** ``g1_sim_wbc_data_gr00t_n_1_7_config.py`` **for** ``--modality-config-path``\ **.**
+   This registers the modality with ``NEW_EMBODIMENT`` (40-step action horizon for N1.7) and is the
+   same file the Arena server consumes at eval. Keeping a single source of truth prevents skew
+   between training and serving.
 
 #. **Pick** ``action_horizon`` **deliberately.** The default (40) gives an 800 ms inference chunk at
    50 Hz, which trades responsiveness against compute. For static apple-to-plate (~600 step
    episodes) 40 is a good default. Going lower (e.g., 20) gives more responsive closed-loop control
-   at the cost of more frequent policy queries; going higher (e.g., 50) is closer to the
-   loco-manipulation default. Whichever value you pick, **keep the modality config and the server
-   YAML in sync** (see the caution above).
+   at the cost of more frequent policy queries; going higher (e.g., 60) gives a longer inference
+   horizon at the cost of more compute per step. Whichever value you pick, **keep the modality
+   config and the server YAML in sync** (see the caution above).
 
 If you adjust any of these and the resulting checkpoint behaves badly at evaluation, the most
 common culprits in order are: (i) too few or low-quality demonstrations, (ii) modality config /
