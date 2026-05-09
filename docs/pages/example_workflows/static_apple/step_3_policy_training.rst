@@ -20,14 +20,12 @@ This page assumes you have a successful recording at
 Step 1: Convert to LeRobot Format
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-GR00T N1.7 consumes datasets in LeRobot format. The converter pulls in a few GR00T-side
-dependencies (LeRobot's dataset writer, GR00T's modality types), so run this step from the
-**GR00T** Arena container rather than the Base one. The LeRobot output itself is
-GR00T-version-agnostic.
+GR00T N1.7 consumes datasets in LeRobot format. The conversion runs inside the standard
+**Base** Arena container.
 
-**Docker Container**: Base + GR00T (see :doc:`../imitation_learning/index` for more details)
+**Docker Container**: Base (see :doc:`../../quickstart/installation` for more details)
 
-:docker_run_gr00t:
+:docker_run_default:
 
 Once inside the container, set the dataset directory:
 

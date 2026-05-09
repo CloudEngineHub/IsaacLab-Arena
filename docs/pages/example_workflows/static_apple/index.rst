@@ -95,11 +95,13 @@ Standalone Isaac-GR00T (N1.7) checkout (used in :doc:`step_3_policy_training` an
 .. code:: bash
 
     # Clone wherever you want; the docs below refer to it as $ISAAC_GR00T_DIR.
+    # Pin to the commit this workflow was validated against.
     git clone https://github.com/NVIDIA/Isaac-GR00T.git /path/to/Isaac-GR00T
     export ISAAC_GR00T_DIR=/path/to/Isaac-GR00T
+    cd $ISAAC_GR00T_DIR && git checkout 3df8b3825d67f755e69141446f4315f281b9b7e6
 
     # Create the venv (uv-managed).
-    cd $ISAAC_GR00T_DIR && uv sync
+    uv sync
 
 See the `Isaac-GR00T README <https://github.com/NVIDIA/Isaac-GR00T#readme>`_ for alternatives to
 ``uv-managed`` environment.
