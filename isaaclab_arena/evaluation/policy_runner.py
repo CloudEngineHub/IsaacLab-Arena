@@ -12,6 +12,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
+from isaaclab_arena.evaluation.camera_video import CameraObsVideoRecorder
 from isaaclab_arena.evaluation.policy_runner_cli import add_policy_runner_arguments
 from isaaclab_arena.metrics.metrics_logger import metrics_to_plain_python_types
 from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppContext
@@ -215,6 +216,15 @@ def main():
                 step_trigger=lambda step: step == 0,
                 video_length=video_length,
                 disable_logger=True,
+            )
+            # Also capture the embodiment-mounted cameras (what the policy sees).
+            # RecordVideo above grabs the kit viewport; this wrapper writes one
+            # mp4 per camera from obs["camera_obs"] using the same encoder.
+            env = CameraObsVideoRecorder(
+                env,
+                video_folder=args_cli.video_dir,
+                step_trigger=lambda step: step == 0,
+                video_length=video_length,
             )
             print(f"[Rank {local_rank}/{world_size}] Recording {video_length}-step video to: {args_cli.video_dir}")
 
