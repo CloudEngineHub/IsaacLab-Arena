@@ -33,13 +33,55 @@ from isaaclab_arena.utils.random import set_seed
 from isaaclab_arena_environments.cli import get_arena_builder_from_cli, get_isaaclab_arena_environments_cli_parser
 
 
-def _add_cli_args(parser) -> None:
+def _add_cli_args(parser, target_env_default: int = 0, include_start_count: bool = True) -> None:
     group = parser.add_argument_group("Fixed Layout Prefix Replay")
     group.add_argument("--source_env_id", type=int, default=1, help="Env index to capture the solved full layout from.")
-    group.add_argument("--target_env_id", type=int, default=0, help="Env index to replay the captured layout into.")
-    group.add_argument("--start_count", type=int, default=2, help="First prefix size to replay.")
+    group.add_argument(
+        "--target_env_id",
+        type=int,
+        default=target_env_default,
+        help="Env index to replay the captured layout into.",
+    )
+    if include_start_count:
+        group.add_argument("--start_count", type=int, default=2, help="First prefix size to replay.")
     group.add_argument("--settle_steps", type=int, default=60, help="Steps to run before the first metric readout.")
     group.add_argument("--dwell_steps", type=int, default=500, help="Additional steps to run for visual inspection.")
+    group.add_argument(
+        "--table_as_base",
+        action="store_true",
+        default=False,
+        help="Spawn office_table as a BASE asset instead of a RIGID object for table-setup ablation.",
+    )
+    group.add_argument(
+        "--object_max_depenetration_velocity",
+        type=float,
+        default=None,
+        help="Override max_depenetration_velocity for replayed object assets.",
+    )
+    group.add_argument(
+        "--object_solver_position_iterations",
+        type=int,
+        default=None,
+        help="Override solver_position_iteration_count for replayed object assets.",
+    )
+    group.add_argument(
+        "--object_contact_offset",
+        type=float,
+        default=None,
+        help="Override contact_offset for replayed object assets.",
+    )
+    group.add_argument(
+        "--object_rest_offset",
+        type=float,
+        default=None,
+        help="Override rest_offset for replayed object assets.",
+    )
+    group.add_argument(
+        "--object_restitution",
+        type=float,
+        default=None,
+        help="Override rigid-body material restitution for replayed object assets.",
+    )
 
 
 def main() -> int:
@@ -54,10 +96,12 @@ def main() -> int:
         if args_cli.seed is not None:
             set_seed(args_cli.seed)
 
+        _apply_diagnostic_overrides(args_cli)
         arena_builder = get_arena_builder_from_cli(args_cli)
         env, _ = arena_builder.make_registered_and_return_cfg()
         if args_cli.seed is not None:
             set_seed(args_cli.seed, env)
+        _apply_runtime_restitution_override(env, args_cli)
 
         try:
             _run_replay(env, arena_builder.arena_env, args_cli)
@@ -66,6 +110,98 @@ def main() -> int:
             env.close()
 
     return 0
+
+
+def _apply_diagnostic_overrides(args_cli) -> None:
+    """Apply temporary asset config overrides for physics ablations.
+
+    These overrides intentionally avoid convex hull. They test whether the fixed
+    layout failure is sensitive to table spawning or common PhysX contact knobs.
+    """
+    if not any(
+        [
+            args_cli.table_as_base,
+            args_cli.object_max_depenetration_velocity is not None,
+            args_cli.object_solver_position_iterations is not None,
+            args_cli.object_contact_offset is not None,
+            args_cli.object_rest_offset is not None,
+            args_cli.object_restitution is not None,
+        ]
+    ):
+        return
+
+    import isaaclab.sim as sim_utils
+
+    from isaaclab_arena.assets.object_base import ObjectType
+    from isaaclab_arena.assets.registries import AssetRegistry
+
+    registry = AssetRegistry()
+
+    if args_cli.table_as_base:
+        office_table_cls = registry.get_asset_by_name("office_table")
+        office_table_cls.object_type = ObjectType.BASE
+        print("[prefix-viz] override: office_table object_type=BASE", flush=True)
+
+    rigid_kwargs = {}
+    if args_cli.object_max_depenetration_velocity is not None:
+        rigid_kwargs["max_depenetration_velocity"] = float(args_cli.object_max_depenetration_velocity)
+    if args_cli.object_solver_position_iterations is not None:
+        rigid_kwargs["solver_position_iteration_count"] = int(args_cli.object_solver_position_iterations)
+
+    collision_kwargs = {}
+    if args_cli.object_contact_offset is not None:
+        collision_kwargs["contact_offset"] = float(args_cli.object_contact_offset)
+    if args_cli.object_rest_offset is not None:
+        collision_kwargs["rest_offset"] = float(args_cli.object_rest_offset)
+
+    for object_name in args_cli.objects:
+        object_cls = registry.get_asset_by_name(object_name)
+        spawn_cfg_addon = dict(getattr(object_cls, "spawn_cfg_addon", {}) or {})
+        if rigid_kwargs:
+            spawn_cfg_addon["rigid_props"] = sim_utils.RigidBodyPropertiesCfg(**rigid_kwargs)
+        if collision_kwargs:
+            spawn_cfg_addon["collision_props"] = sim_utils.CollisionPropertiesCfg(**collision_kwargs)
+        object_cls.spawn_cfg_addon = spawn_cfg_addon
+
+    print(
+        "[prefix-viz] object overrides: rigid={} collision={} restitution={}".format(
+            rigid_kwargs,
+            collision_kwargs,
+            args_cli.object_restitution,
+        ),
+        flush=True,
+    )
+
+
+def _apply_runtime_restitution_override(env, args_cli) -> None:
+    if args_cli.object_restitution is None:
+        return
+
+    import isaaclab.sim as sim_utils
+    import omni.usd
+    from pxr import Usd, UsdPhysics
+
+    stage = omni.usd.get_context().get_stage()
+    material_path = "/World/diagnostic_object_physics_material"
+    material_cfg = sim_utils.RigidBodyMaterialCfg(restitution=float(args_cli.object_restitution))
+    material_cfg.func(material_path, material_cfg)
+
+    bind_count = 0
+    for object_name in args_cli.objects:
+        for env_id in range(int(args_cli.num_envs)):
+            root_prim = stage.GetPrimAtPath(f"/World/envs/env_{env_id}/{object_name}")
+            if not root_prim.IsValid():
+                continue
+            for prim in Usd.PrimRange(root_prim):
+                if prim.HasAPI(UsdPhysics.CollisionAPI):
+                    if sim_utils.bind_physics_material(prim.GetPath(), material_path, stage=stage):
+                        bind_count += 1
+
+    print(
+        f"[prefix-viz] runtime restitution override: restitution={args_cli.object_restitution} "
+        f"material={material_path} bound_colliders={bind_count}",
+        flush=True,
+    )
 
 
 def _run_replay(env, arena_env, args_cli) -> None:

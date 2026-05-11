@@ -19,6 +19,8 @@ import torch
 
 from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
 from isaaclab_arena.llm_env_gen.run_fixed_layout_prefix_viz import (
+    _add_cli_args as _add_prefix_diagnostic_args,
+    _apply_diagnostic_overrides,
     _capture_root_poses,
     _overlap_partners,
     _remap_poses_to_target_env,
@@ -37,9 +39,8 @@ from isaaclab_arena_environments.cli import get_arena_builder_from_cli, get_isaa
 
 
 def _add_cli_args(parser) -> None:
+    _add_prefix_diagnostic_args(parser, target_env_default=1, include_start_count=False)
     group = parser.add_argument_group("Fixed Layout Subset Replay")
-    group.add_argument("--source_env_id", type=int, default=1, help="Env index to capture the solved full layout from.")
-    group.add_argument("--target_env_id", type=int, default=1, help="Env index to replay the captured layout into.")
     group.add_argument(
         "--active_objects",
         type=str,
@@ -62,6 +63,7 @@ def main() -> int:
         if args_cli.seed is not None:
             set_seed(args_cli.seed)
 
+        _apply_diagnostic_overrides(args_cli)
         arena_builder = get_arena_builder_from_cli(args_cli)
         env, _ = arena_builder.make_registered_and_return_cfg()
         if args_cli.seed is not None:

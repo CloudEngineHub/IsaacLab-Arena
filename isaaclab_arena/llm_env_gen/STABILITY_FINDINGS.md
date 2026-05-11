@@ -352,6 +352,130 @@ Both fixes are independent and complementary:
 
 ---
 
+## Current Diagnosis Notes for Heterogeneous Placement
+
+These notes summarize the later diagnosis runs that should be useful when
+porting the heterogeneous-placement demo/fixes to a clean branch.
+
+### Asset Scope
+
+The fixed-layout replay uses only Robolab assets, but they come from mixed
+Robolab subgroups:
+
+| Object | Robolab subgroup |
+|--------|------------------|
+| `banana_ycb_robolab` | YCB |
+| `lime01_fruits_veggies_robolab` | fruits/veggies |
+| `mustard_bottle_hope_robolab` | HOPE |
+| `alphabet_soup_can_hope_robolab` | HOPE |
+| `spoon_handal_robolab` | handal/tool |
+| `popcorn_box_hope_robolab` | HOPE |
+
+### Table Ablation
+
+Most table/counter examples in this repo use a background/base asset as the
+support surface, then create an `ObjectReference` to the tabletop/countertop
+prim. The GR1 no-collision example originally used `office_table` from
+`object_library.py`, so we tested the table hypothesis in two ways:
+
+1. Runtime override: force `office_table` to `ObjectType.BASE`.
+2. Code-path alignment: add `office_table_background` in `background_library.py`
+   and make the GR1 example use that background asset.
+
+Both tests reproduced the same fixed-layout failure:
+
+| Prefix | Result |
+|--------|--------|
+| 2 objects | stable |
+| 3 objects, mustard added | mustard stable |
+| 4 objects, alphabet soup added | mustard still stable |
+| 5 objects, spoon added | mustard tips/falls |
+| 6 objects, popcorn added | failure remains |
+
+Conclusion: table setup may be worth keeping aligned with the repo pattern, but
+it does not appear to be the main cause of this failure.
+
+### Spawn Height / Clearance
+
+The `On(table)` relation default is `clearance_m=0.01`, so the intended
+clearance is 1 cm between the object bottom bbox and the table top. The logged
+object root `z` value is not the clearance; it includes the object's local bbox
+offset:
+
+```text
+root_z = table_top_z + clearance_m - object_bbox_min_z
+```
+
+For `mustard_bottle_hope_robolab`, the baseline placement root height is around
+`z=0.6207`. In a mustard-only drop-height sweep, the baseline row settled by
+about `0.0107m`, matching the 1 cm configured clearance.
+
+Drop-height sweep command:
+
+```bash
+/isaac-sim/python.sh isaaclab_arena/llm_env_gen/run_drop_height_sweep.py \
+  --headless --seed 123 --num_envs 1 --settle_steps 120 \
+  --heights_m 0,0.002,0.005,0.01,0.02,0.03,0.04,0.05,0.075,0.10 \
+  gr1_table_multi_object_no_collision \
+  --embodiment gr1_joint \
+  --objects mustard_bottle_hope_robolab
+```
+
+Observed single-run result:
+
+| Extra Z above baseline | Status |
+|------------------------|--------|
+| 0.000m | stable |
+| 0.002m | stable |
+| 0.005m | stable |
+| 0.010m | stable |
+| 0.020m | stable |
+| 0.030m | fell/tipped |
+| 0.040m | fell/tipped |
+| 0.050m | stable |
+| 0.075m | fell/tipped |
+| 0.100m | fell/tipped |
+
+The result is non-monotonic, so do not claim `0.05m` is generally safe. A
+conservative interpretation is that mustard is consistently safe up to about
+`0.02m` extra height in this single-object run, but contact behavior becomes
+sensitive above that. The fixed-layout replay uses only the baseline 1 cm
+clearance, so the multi-object failure is not caused by a large initial drop.
+
+### Peter's PhysX Parameter Suggestions
+
+We tested several object-level PhysX overrides with convex hull disabled:
+
+| Parameter ablation | Result |
+|--------------------|--------|
+| `max_depenetration_velocity=0.01` | did not stabilize; mustard still tipped/fell |
+| `contact_offset=0.001`, `rest_offset=0.0` | worse; larger drift/falls |
+| `contact_offset=0.005`, `rest_offset=0.0` | worse; multiple objects fell/slid |
+| `solver_position_iteration_count=64` | worse in this replay; more sliding/falling |
+| `restitution=0.0` | inconclusive as a direct USD override; sim default already shows restitution 0.0, and runtime material binding did not attach to colliders |
+
+Conclusion: the easy tuning knobs did not resolve the failure. Contact/rest
+offset and high solver iterations can make this fixed layout less stable.
+
+### Working Interpretation
+
+The strongest current signal is still object collision geometry / contact
+behavior:
+
+- The failing fixed layout reports `initial_overlaps=[]`.
+- Mustard is stable before the spoon is introduced.
+- Adding `spoon_handal_robolab` triggers mustard tipping/falling even though the
+  objects are visually separated at spawn.
+- The same failure survives table changes and common PhysX parameter ablations.
+- `force_convex_hull` remains the most effective mitigation observed so far for
+  fragile Robolab scanned objects.
+
+Open follow-up: rerun the same fixed-layout replay with CPU physics. If the
+failure disappears on CPU, this points toward GPU PhysX/contact behavior. If it
+persists, the object collision geometry remains the stronger suspect.
+
+---
+
 ## Open Questions
 
 - [ ] Run convexHull scan to see which of the 8 unstable objects get fixed
