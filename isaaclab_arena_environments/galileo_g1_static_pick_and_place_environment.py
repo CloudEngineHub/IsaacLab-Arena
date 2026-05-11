@@ -26,7 +26,6 @@ import argparse
 import warnings
 from typing import TYPE_CHECKING
 
-from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
 if TYPE_CHECKING:
@@ -116,7 +115,6 @@ def _asset_scale(asset_name: str) -> tuple[float, float, float]:
     return (1.0, 1.0, 1.0)
 
 
-@register_environment
 class GalileoG1StaticPickAndPlaceEnvironment(ExampleEnvironmentBase):
     """G1 (WBC-balanced, no nav) pick-and-place on the locomanip warehouse shelf.
 
