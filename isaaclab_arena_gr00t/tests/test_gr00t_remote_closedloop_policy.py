@@ -15,7 +15,6 @@ Verifies:
 - ``reset`` propagates to the client;
 - a failing ping during construction raises ``ConnectionError``.
 """
-# TODO(xinjieyao, 2026-04-27):will be moved to base container test when removing deprecated local policy
 
 from __future__ import annotations
 
@@ -26,13 +25,9 @@ from typing import Any
 
 import pytest
 
-# NOTE: ``isaaclab_arena.policy.action_scheduling`` is imported lazily inside
-# tests/helpers (mirrors ``test_action_scheduling.py``). Importing it at module
-# top level pulls in ``isaaclab_arena.policy.__init__`` which star-imports
-# policies that load isaaclab/pxr — that pre-loads pxr at pytest collection
-# time and trips Kit's ``omni.kit.usd.mdl`` extension when a sibling test later
-# instantiates SimulationApp (CI gr00t docker has GROOT_DEPS_DIR set, which
-# makes the ordering fatal).
+pytestmark = pytest.mark.gr00t_policy
+
+
 from isaaclab_arena_gr00t.tests.utils.constants import TestConstants as Gr00tTestConstants
 
 NUM_ENVS = 2

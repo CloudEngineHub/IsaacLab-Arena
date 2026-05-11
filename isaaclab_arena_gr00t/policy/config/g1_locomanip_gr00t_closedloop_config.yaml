@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# This file shows how to configure the Gr00tClosedloopPolicy class for G1 locomanipulation task
+# This file shows how to configure the Gr00tRemoteClosedloopPolicy class for G1 locomanipulation task
 # NOTE(alexmillane, 2025-10-31): The model path here aligns with the model used in the static manipulation tutorial.
 model_path: /models/isaaclab_arena/locomanipulation_tutorial/checkpoint-20000
 language_instruction: "Pick up the brown box from the shelf, and place it into the blue bin on the table located at the right of the shelf."
