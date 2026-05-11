@@ -403,7 +403,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../concepts/concept_object_placement.html">Object Placement</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../concepts/policy/index.html">Policy</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../concepts/policy/concept_evaluation_types.html">Evaluation Types</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../concepts/policy/concept_remote_policies_design.html">Remote Policies</a></li>
 </ul>
 </details></li>
 </ul>
@@ -412,7 +411,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../advanced/private_omniverse.html">Omniverse Authentication</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../advanced/assets_management.html">Assets Management</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../jupyter_notebooks.html">Jupyter Notebooks</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../advanced/gr00t_server_client.html">Server-Client Mode With GR00T</a></li>
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">References</span></p>
 <ul class="nav bd-sidenav">
@@ -480,17 +478,36 @@ model in action, <a class="reference external" href="https://github.com/NVIDIA/I
 robotic foundation model. No fine-tuning or separate model download is required —
 the weights fetch automatically from
 <a class="reference external" href="https://huggingface.co/nvidia/GR00T-N1.6-DROID">HuggingFace</a> on first use.</p>
-<p><strong>Prerequisite: GR00T container</strong></p>
-<p>GR00T requires extra dependencies not included in the base Arena container. Rebuild and restart
-with the <code class="docutils literal notranslate"><span class="pre">-g</span></code> flag:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>./docker/run_docker.sh<span class="w"> </span>-g
+<p><strong>Prerequisite: start a GR00T policy server</strong></p>
+<p>The closed-loop policy used below connects to a GR00T policy server running in a
+separate process. The server runs out of the
+<a class="reference external" href="https://github.com/NVIDIA/Isaac-GR00T/tree/e29d8fc50b0e4745120ae3fb72447986fe638aa6">Isaac-GR00T</a>
+submodule pinned at commit <code class="docutils literal notranslate"><span class="pre">e29d8fc</span></code>; populate it with
+<code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">submodule</span> <span class="pre">update</span> <span class="pre">--init</span> <span class="pre">submodules/Isaac-GR00T</span></code> if it is not already
+checked out. Then, in a separate shell from the repo root:</p>
+<div class="admonition-todo admonition" id="id1">
+<p class="admonition-title">Todo</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">submodules/Isaac-GR00T</span></code> submodule will be removed after the policy
+config refactor. After that, users will be expected to set up a separate
+GR00T repository checkout themselves and launch the server from there.</p>
+</div>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>submodules/Isaac-GR00T
+uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>gr00t/eval/run_gr00t_server.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--model-path<span class="w"> </span>nvidia/GR00T-N1.6-DROID<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--embodiment-tag<span class="w"> </span>OXE_DROID<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--device<span class="w"> </span>cuda<span class="w"> </span>--host<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>--port<span class="w"> </span><span class="m">5555</span>
 </pre></div>
 </div>
+<p>GR00T N1.6-DROID ships with its own modality config, so <code class="docutils literal notranslate"><span class="pre">--modality-config-path</span></code>
+is omitted here. The first launch fetches the model weights from
+<a class="reference external" href="https://huggingface.co/nvidia/GR00T-N1.6-DROID">HuggingFace</a>; subsequent
+launches reuse the local cache.</p>
 <p><strong>Run GR00T closed-loop</strong></p>
 <p>Three things change relative to the zero-action baseline:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">--policy_type</span></code> points to the GR00T closed-loop policy class and <code class="docutils literal notranslate"><span class="pre">--policy_config_yaml_path</span></code>
-provides its config (model ID, action chunk length, camera names, etc.)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">--policy_type</span></code> points to the GR00T remote closed-loop policy class and
+<code class="docutils literal notranslate"><span class="pre">--policy_config_yaml_path</span></code> provides its config (action chunk length, camera names, etc.);
+<code class="docutils literal notranslate"><span class="pre">--remote_host</span></code> / <code class="docutils literal notranslate"><span class="pre">--remote_port</span></code> point at the GR00T policy server</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">--enable_cameras</span></code> turns on the robot’s cameras, which GR00T requires for observations</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">--language_instruction</span></code> sets the natural-language instruction sent to the model</p></li>
 </ul>
@@ -500,8 +517,10 @@ instead of <code class="docutils literal notranslate"><span class="pre">--embodi
 of simulation steps:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>isaaclab_arena/evaluation/policy_runner.py<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--viz<span class="w"> </span>kit<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--policy_type<span class="w"> </span>isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--policy_type<span class="w"> </span>isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--policy_config_yaml_path<span class="w"> </span>isaaclab_arena_gr00t/policy/config/droid_manip_gr00t_closedloop_config.yaml<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--remote_host<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--remote_port<span class="w"> </span><span class="m">5555</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--language_instruction<span class="w"> </span><span class="s2">&quot;Pick up the Rubik&#39;s cube and place it in the bowl.&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--enable_cameras<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--num_episodes<span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="se">\</span>
@@ -526,12 +545,12 @@ object and lighting condition, as we shall see in the next section.</p>
 </div>
 <p>This runs nine jobs sequentially — each varying the object, background, and destination — and reports a per-job success rate.
 Each evaluation is run without restarting Isaac Sim to save on the startup time.</p>
-<figure class="align-center" id="id2">
+<figure class="align-center" id="id4">
 <a class="reference internal image-reference" href="../../../_images/gr00t_droid_3x3_grid.gif"><img alt="3x3 grid of GR00T N1.6 DROID runs across different objects, backgrounds, and destinations" src="../../../_images/gr00t_droid_3x3_grid.gif" style="width: 100%;" />
 </a>
 <figcaption>
 <p><span class="caption-text">9 closed-loop evaluation runs of GR00T N1.6 on the DROID embodiment — each cell varies the
-pick-up object, background HDR, and destination.</span><a class="headerlink" href="#id2" title="Link to this image">#</a></p>
+pick-up object, background HDR, and destination.</span><a class="headerlink" href="#id4" title="Link to this image">#</a></p>
 </figcaption>
 </figure>
 <p>At the end of the run you will see a job summary table followed by a metrics report:</p>
@@ -580,7 +599,7 @@ droid_pnp_srl_gr00t_blue_block:
 models is still a challenging problem. Recent results <a class="reference external" href="https://gitlab-master.nvidia.com/xuningy/robolab/-/blob/main/docs/analysis.md">[robolab]</a>
 show that bleeding-edge Vision Language Action (VLA) models are starting to achieve more reasonable results.</p>
 <section id="next-steps">
-<span id="id1"></span><h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
+<span id="id3"></span><h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
 <p>To go beyond the pre-trained GR00T N1.6 foundation model — for example, fine-tuning on your own
 teleoperation data — see <a class="reference internal" href="../../example_workflows/imitation_learning/index.html"><span class="doc">Imitation Learning</span></a> for
 end-to-end imitation learning workflows.</p>
