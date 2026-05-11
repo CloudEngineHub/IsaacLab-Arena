@@ -172,6 +172,40 @@ class VariationBase(ABC):
         else:
             raise TypeError(f"set_sampler expects a Sampler or SamplerCfg; got {type(sampler).__name__}.")
 
+    def apply_cfg(self, cfg: VariationBaseCfg) -> None:
+        """Install ``cfg`` as the variation's new source of truth.
+
+        Used by the structured-config / Hydra path
+        (:meth:`~isaaclab_arena.environments.arena_env_builder.ArenaEnvBuilder.apply_hydra_variation_overrides`)
+        to push a fully-composed cfg back onto a live variation in one shot.
+        Replaces :attr:`cfg` wholesale — so every cfg-borne field (``enabled``
+        and any variation-specific knobs like ``mode`` / ``mesh_name``) flips
+        atomically — and rebuilds the live :class:`Sampler` from the new
+        :class:`~isaaclab_arena.variations.sampler.SamplerCfg` if the cfg
+        carries one. Subclasses that own additional derived state (something
+        cached from the cfg that isn't the sampler) should override this and
+        call ``super().apply_cfg(cfg)`` first.
+
+        This is the abstraction boundary that keeps the env builder free of
+        variation-specific field names: the builder doesn't enumerate
+        ``"sampler"`` / ``"mode"`` / ...; it just hands the composed cfg to
+        :meth:`apply_cfg` and lets the variation cfg dataclass *be* the
+        enumeration of tunable parameters.
+
+        Args:
+            cfg: The cfg to install. Must be an instance of the same
+                :class:`VariationBaseCfg` subclass that this variation
+                originally accepted (typically constructed by the
+                structured-config / Hydra layer from this variation's
+                ``*Cfg`` schema). Not type-checked at runtime; assigning
+                an incompatible cfg will only fail later, when a
+                concrete method tries to read a field that isn't there.
+        """
+        self.cfg = cfg
+        sampler_cfg = getattr(cfg, "sampler", None)
+        if isinstance(sampler_cfg, SamplerCfg):
+            self.set_sampler(sampler_cfg)
+
     @abstractmethod
     def build_event_cfg(self, scene: Scene) -> tuple[str, EventTermCfg]:
         """Return the event term that realises this variation.

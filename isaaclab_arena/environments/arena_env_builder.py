@@ -305,6 +305,101 @@ class ArenaEnvBuilder:
             return None
         return self._build_variations_schema(pairs)
 
+    def compose_variations_cfg(self, hydra_overrides: list[str]) -> Any | None:
+        """Compose Hydra override strings into a typed ``VariationsCfg`` instance.
+
+        Step 1 of the two-step structured-config variation path. Builds the
+        schema returned by :meth:`get_variations_schema`, registers it with
+        Hydra's :class:`~hydra.core.config_store.ConfigStore`, composes the
+        supplied overrides against it, and converts the result from the
+        loosely-typed :class:`~omegaconf.DictConfig` form back into the
+        dataclass tree the schema describes via
+        :func:`omegaconf.OmegaConf.to_object`. The returned object is a
+        ``VariationsCfg`` instance whose per-asset fields are themselves
+        dataclass instances and whose leaf per-variation fields are typed
+        ``*Cfg`` instances (e.g.
+        :class:`~isaaclab_arena.variations.object_color.ObjectColorVariationCfg`),
+        not :class:`~omegaconf.DictConfig`.
+
+        Splitting this out from :meth:`apply_hydra_variation_overrides` lets
+        the builder's *write-back* step deal with typed cfgs only — it never
+        has to look up individual cfg fields by name, so adding a new
+        variation (with a different cfg shape) doesn't touch the builder.
+
+        Args:
+            hydra_overrides: Hydra override strings, dotted-path syntax.
+                See :meth:`apply_hydra_variation_overrides` for examples.
+
+        Returns:
+            The composed ``VariationsCfg`` instance, or ``None`` when the
+            scene has no variations attached.
+
+        Note:
+            :class:`~hydra.core.global_hydra.GlobalHydra` is cleared on entry
+            so this method is safe to call repeatedly in the same process
+            (e.g. across cells of a notebook, or inside an eval-runner loop).
+            See the open-questions section of ``2026_05_11_hydra_variation_plan.md``
+            for the longer-running motivation behind this.
+        """
+        from hydra import compose, initialize
+        from hydra.core.config_store import ConfigStore
+        from hydra.core.global_hydra import GlobalHydra
+        from omegaconf import OmegaConf
+
+        pairs = self._iter_scene_variations()
+        if not pairs:
+            return None
+        schema_cls = self._build_variations_schema(pairs)
+        ConfigStore.instance().store(name="arena_variations_schema", node=schema_cls)
+        if GlobalHydra.instance().is_initialized():
+            GlobalHydra.instance().clear()
+        with initialize(version_base=None, config_path=None):
+            composed = compose(config_name="arena_variations_schema", overrides=hydra_overrides)
+        return OmegaConf.to_object(composed)
+
+    def apply_hydra_variation_overrides(self, hydra_overrides: list[str]) -> None:
+        """Apply Hydra-style variation overrides to the scene's variations.
+
+        Two-step:
+
+        1. **Strings → typed cfg.** :meth:`compose_variations_cfg` composes
+           the supplied override strings against the structured-config
+           schema and returns a fully-typed ``VariationsCfg`` instance.
+        2. **Typed cfg → live variation state.** For every
+           ``(asset_name, variation)`` pair the builder knows about, the
+           corresponding per-variation cfg is handed to
+           :meth:`~isaaclab_arena.variations.variation_base.VariationBase.apply_cfg`,
+           which replaces ``variation.cfg`` wholesale and rebuilds any
+           derived live state (e.g. the live sampler).
+
+        This split deliberately keeps the builder free of variation-specific
+        field names: the variation cfg dataclass *is* the enumeration of
+        the variation's tunable parameters, and
+        :meth:`VariationBase.apply_cfg` is the abstraction boundary that
+        knows how to map a cfg back onto its live variation. Adding a new
+        variation (with its own ``*Cfg`` shape) requires no changes here.
+
+        Args:
+            hydra_overrides: Hydra override strings, dotted-path syntax
+                mirroring the schema attribute paths (one level per asset,
+                one per variation, then per cfg field). May be empty (no-op
+                beyond a schema-defaults round-trip). Unknown asset /
+                variation / field paths are rejected by Hydra's
+                structured-config validator at compose time. Example::
+
+                    env_builder.apply_hydra_variation_overrides([
+                        "cracker_box.color.enabled=true",
+                        "cracker_box.color.sampler.low=[0.2,0.2,0.0]",
+                        "cracker_box.color.sampler.high=[1.0,1.0,0.0]",
+                    ])
+        """
+        composed = self.compose_variations_cfg(hydra_overrides)
+        if composed is None:
+            return
+        for asset_name, variation in self._iter_scene_variations():
+            variation_cfg = getattr(getattr(composed, asset_name), variation.name)
+            variation.apply_cfg(variation_cfg)
+
     def _modify_recorder_cfg_dataset_filename(self, recorder_cfg: RecorderManagerBaseCfg) -> RecorderManagerBaseCfg:
         """Modify the recorder dataset filename to include the timestamp and rank."""
         base = getattr(recorder_cfg, "dataset_filename", "dataset")

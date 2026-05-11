@@ -19,9 +19,10 @@ No new sampler types, no other variations, no eval-runner / experiment-file inte
 - [x] **`get_variations()` returns all.** `ObjectBase.get_variations()` / `Scene.get_variations()` now expose every attached variation (enabled or not); the `enabled` filter is applied locally in `ArenaEnvBuilder._compose_variations_event_cfg`. [isaaclab_arena/assets/object_base.py](isaaclab_arena/assets/object_base.py), [isaaclab_arena/scene/scene.py](isaaclab_arena/scene/scene.py), [isaaclab_arena/environments/arena_env_builder.py](isaaclab_arena/environments/arena_env_builder.py)
 - [x] **Schema helpers on the builder.** `_iter_scene_variations()` collects `(asset_name, variation)` pairs from the scene; `_build_variations_schema(pairs)` builds a dynamic `VariationsCfg` dataclass using each variation's existing `*Cfg` directly as the per-variation node. [isaaclab_arena/environments/arena_env_builder.py](isaaclab_arena/environments/arena_env_builder.py)
 - [x] **Public `get_variations_schema()`.** Thin wrapper that returns the dynamic class; `compile_env_notebook.py` prints the schema via `OmegaConf.to_yaml(OmegaConf.structured(...))` as an eyeball-before-Hydra-compose smoke test. [isaaclab_arena/examples/compile_env_notebook.py](isaaclab_arena/examples/compile_env_notebook.py)
-- [ ] **`apply_hydra_variation_overrides(hydra_overrides)`.** Register the schema with `ConfigStore`, call `hydra.compose`, walk the result, and for every entry with `enabled=True` call `variation.set_sampler(cfg.sampler)` (+ propagate `mode` / `mesh_name`) and `variation.enable()`.
-- [ ] **`isaaclab_arena/examples/compile_env_hydra_notebook.py`.** Sibling of `compile_env_notebook.py` driving the two color variations through `apply_hydra_variation_overrides(...)` instead of the imperative `enable() / set_sampler()` calls.
-- [ ] **`@configclass` + Hydra sanity check.** Verify that `@configclass`-decorated `ObjectColorVariationCfg` works as a Hydra structured-config node end-to-end (`OmegaConf.structured` round-trip + list override of `sampler.low`). Local smoke test with stdlib `@dataclass` mocks passed; the real path needs to be run inside the Isaac Sim container.
+- [x] **`compose_variations_cfg(hydra_overrides)` + `apply_hydra_variation_overrides(hydra_overrides)`.** Split into two steps after code review: compose builds the schema, registers it with `ConfigStore`, calls `hydra.compose`, and converts the result back into a typed `VariationsCfg` instance via `OmegaConf.to_object`; apply chains compose with a per-variation `variation.apply_cfg(per_variation_cfg)` write-back. `GlobalHydra.instance().clear()` is called on entry so both methods are re-entrant. [isaaclab_arena/environments/arena_env_builder.py](isaaclab_arena/environments/arena_env_builder.py)
+- [x] **`VariationBase.apply_cfg(cfg)`.** Abstraction boundary that absorbs the per-variation field knowledge the builder used to hard-code (`sampler`, `mode`, `mesh_name`, ...). The base implementation does `self.cfg = cfg` and rebuilds the live sampler via `set_sampler(cfg.sampler)` when present; subclasses with extra derived state override and call `super().apply_cfg`. The builder's apply path is now field-name-free. [isaaclab_arena/variations/variation_base.py](isaaclab_arena/variations/variation_base.py)
+- [x] **Notebook integration in `compile_env_notebook.py`.** Replaced the (sibling-notebook) plan: the existing `compile_env_notebook.py` now drives the two colour variations through `apply_hydra_variation_overrides([...])` with the imperative `enable() / set_sampler(...)` calls commented out (kept as a reference, not deleted) so the two paths sit side-by-side in one file. The schema is dumped before and after the apply call as a smoke test. [isaaclab_arena/examples/compile_env_notebook.py](isaaclab_arena/examples/compile_env_notebook.py)
+- [ ] **`@configclass` + Hydra sanity check (still in-container only).** `OmegaConf.to_object` round-tripping a `@configclass`-decorated `VariationsCfg` tree (including nested `UniformSamplerCfg`) is now load-bearing for `compose_variations_cfg`. A stdlib `@dataclass` mock of the shape passes locally; the real configclass path still needs to be exercised inside the Isaac Sim container. If `to_object` misbehaves in practice, the fallback is field-by-field dataclass reconstruction inside `compose_variations_cfg` — `apply_hydra_variation_overrides` and `VariationBase.apply_cfg` stay unchanged either way.
 
 ## Architecture
 
@@ -29,16 +30,20 @@ No new sampler types, no other variations, no eval-runner / experiment-file inte
 flowchart LR
     argv["sys.argv"] --> argparse["argparse.parse_known_args"]
     argparse -->|"non-hydra flags"| envBuild["build IsaacLabArenaEnvironment\n+ ArenaEnvBuilder"]
-    argparse -->|"leftover overrides"| hydra["hydra.compose"]
-    envBuild --> walk["builder.apply_hydra_variation_overrides"]
-    walk --> schema["_build_variations_schema\n(make_dataclass)"]
+    argparse -->|"leftover overrides"| applyTop["builder.apply_hydra_variation_overrides"]
+    envBuild --> applyTop
+    applyTop --> composeStep["builder.compose_variations_cfg\n(step 1: strings → typed cfg)"]
+    composeStep --> schema["_build_variations_schema\n(make_dataclass)"]
     schema --> CS["ConfigStore.store"]
-    CS --> hydra
-    hydra --> walk
-    walk -->|"per (asset,variation)"| applyOne["variation.set_sampler(cfg.sampler)\nvariation.cfg.mode = ...\nvariation.enable()"]
-    walk --> compose["builder.compose_manager_cfg"]
-    compose -->|"_compose_variations_event_cfg\n(filtered by v.enabled)"| events[events_cfg]
+    CS --> hydra["hydra.compose"]
+    hydra --> toObj["OmegaConf.to_object\n(DictConfig → typed VariationsCfg)"]
+    toObj --> composeStep
+    composeStep -->|"per (asset,variation)"| applyOne["variation.apply_cfg(per_variation_cfg)\n(step 2: typed cfg → live state)"]
+    applyTop --> manager["builder.compose_manager_cfg"]
+    manager -->|"_compose_variations_event_cfg\n(filtered by v.enabled)"| events[events_cfg]
 ```
+
+`apply_hydra_variation_overrides` is a thin chain of `compose_variations_cfg` (step 1) and a per-variation `variation.apply_cfg(...)` walk (step 2). The builder code on the apply side has no knowledge of variation-specific fields (`sampler`, `mode`, ...); the variation cfg dataclass *is* the enumeration of tunable parameters and `VariationBase.apply_cfg` is the abstraction boundary that maps a fully-composed cfg back onto its live variation.
 
 ## API shift: `enabled` moves onto the variation cfg
 
@@ -96,67 +101,63 @@ else:
 
 Purpose: smoke test for the schema-building path before `hydra.compose` is wired. Confirms (a) the variation cfgs construct cleanly as dataclass nodes, (b) `OmegaConf.structured` accepts them, (c) the rendered YAML shape (`cracker_box.color.{enabled,mode,mesh_name,sampler.{low,high}}`) matches what we'll be overriding from the Hydra CLI in the next slice.
 
-## Remaining work (steps 5–6)
+## Landed module changes (steps 5–6)
 
-### `ArenaEnvBuilder.apply_hydra_variation_overrides(hydra_overrides)`
+### `isaaclab_arena/variations/variation_base.py`
 
-Sketch:
+- New `VariationBase.apply_cfg(cfg)`: replaces `self.cfg` wholesale (so `enabled` and every variation-specific knob flips atomically) and rebuilds the live `Sampler` from `cfg.sampler` if the cfg carries one (via `set_sampler`). Subclasses that own additional derived state should override and `super().apply_cfg(cfg)` first. This is the abstraction boundary that keeps the builder field-name-free.
+
+### `isaaclab_arena/environments/arena_env_builder.py`
+
+Two-step split, motivated by code-review feedback that the first cut wired variation-specific field names (`sampler`, `mode`, `mesh_name`) into the generic builder:
+
+- New `compose_variations_cfg(hydra_overrides) -> Any | None`. Builds the schema via `_build_variations_schema`, stores it in `ConfigStore`, calls `hydra.compose`, and converts the result back to a typed `VariationsCfg` instance via `OmegaConf.to_object`. `GlobalHydra.instance().clear()` is called on entry so the method is re-entrant (notebook cells, eval-runner loop). Returns `None` when the scene has no variations.
+- Refactored `apply_hydra_variation_overrides(hydra_overrides) -> None`. Now a thin three-line chain: `composed = self.compose_variations_cfg(overrides)`, then a `for (asset_name, variation) in self._iter_scene_variations()` loop that calls `variation.apply_cfg(getattr(getattr(composed, asset_name), variation.name))`. No knowledge of any per-variation cfg field — adding a new variation with a different cfg shape doesn't touch this method.
 
 ```python
 def apply_hydra_variation_overrides(self, hydra_overrides: list[str]) -> None:
-    pairs = self._iter_scene_variations()
-    if not pairs:
+    composed = self.compose_variations_cfg(hydra_overrides)
+    if composed is None:
         return
-    schema_cls = self._build_variations_schema(pairs)
-    ConfigStore.instance().store(name="arena_variations_schema", node=schema_cls)
-    with initialize(version_base=None, config_path=None):
-        cfg = compose(config_name="arena_variations_schema", overrides=hydra_overrides)
-    for asset_name, variation in pairs:
-        node = getattr(getattr(cfg, asset_name), variation.name)
-        if not node.enabled:
-            continue
-        variation.set_sampler(node.sampler)       # UniformSamplerCfg → live sampler + cfg sync
-        for attr in ("mode", "mesh_name"):
-            if hasattr(node, attr):
-                setattr(variation.cfg, attr, getattr(node, attr))
-        variation.enable()
+    for asset_name, variation in self._iter_scene_variations():
+        variation_cfg = getattr(getattr(composed, asset_name), variation.name)
+        variation.apply_cfg(variation_cfg)
 ```
 
-Disabled entries are skipped, leaving the variation in its constructor-default (disabled) state — matching the imperative path in `compile_env_notebook.py`.
+### `isaaclab_arena/examples/compile_env_notebook.py`
 
-### `isaaclab_arena/examples/compile_env_hydra_notebook.py` (new)
+The originally planned sibling notebook (`compile_env_hydra_notebook.py`) was folded into the existing `compile_env_notebook.py` so the imperative and Hydra-driven paths sit side-by-side in one file:
 
-Sibling of [isaaclab_arena/examples/compile_env_notebook.py](isaaclab_arena/examples/compile_env_notebook.py). Same scene (kitchen + `cracker_box` + `tomato_soup_can`) but the colour overrides come from Hydra:
+- The imperative `cracker_box_color.set_sampler(...) / .enable()` block is commented out (not deleted) for reference; the `UniformSampler` / `UniformSamplerCfg` import is kept around with `# noqa: F401` so uncommenting is a single edit.
+- A new cell after the `ArenaEnvBuilder` construction defines a `hydra_variation_overrides` list mirroring the original imperative bounds (cracker box varies red, tomato soup can varies blue), calls `env_builder.apply_hydra_variation_overrides(...)`, and re-dumps the schema so the user can confirm the overrides landed on the live variation cfgs.
+- The pre-existing schema-inspection cell now runs *before* the apply call (its comment was updated to reflect that the schema is in its constructor-default state at that point).
 
-- Parse non-Hydra flags with `get_isaaclab_arena_cli_parser().parse_known_args()`, keep the leftover for Hydra.
-- Build assets / scene / `IsaacLabArenaEnvironment` exactly like the existing notebook, but **without** the explicit `.enable()` / `.set_sampler(...)` calls.
-- Call `env_builder.apply_hydra_variation_overrides(hydra_overrides)`.
-- Then `env_cfg = env_builder.compose_manager_cfg()` (unchanged path), `make_registered(env_cfg)`, run zero actions.
-
-Demo CLI in the module docstring:
-
-```bash
-/isaac-sim/python.sh isaaclab_arena/examples/compile_env_hydra_notebook.py \
-  --num_envs 4 --visualizer kit \
-  cracker_box.color.enabled=true \
-  cracker_box.color.sampler.low=[0.2,0.2,0.0] cracker_box.color.sampler.high=[1.0,1.0,0.0] \
-  tomato_soup_can.color.enabled=true \
-  tomato_soup_can.color.sampler.low=[0.0,0.2,0.2] tomato_soup_can.color.sampler.high=[0.0,1.0,1.0]
+```python
+hydra_variation_overrides = [
+    "cracker_box.color.enabled=true",
+    "cracker_box.color.sampler.low=[0.2,0.2,0.0]",
+    "cracker_box.color.sampler.high=[1.0,1.0,0.0]",
+    "tomato_soup_can.color.enabled=true",
+    "tomato_soup_can.color.sampler.low=[0.0,0.2,0.2]",
+    "tomato_soup_can.color.sampler.high=[0.0,1.0,1.0]",
+]
+env_builder.apply_hydra_variation_overrides(hydra_variation_overrides)
 ```
 
-Mirrors the two colour overrides currently hard-coded in `compile_env_notebook.py` so the visual outcome is identical.
+In-notebook hard-coded list rather than the originally planned `parse_known_args()` leftover argv, because the notebook drives the rest of the flow with `args_cli = get_isaaclab_arena_cli_parser().parse_args([])` — there are no CLI args to "left over". The hard-coded list is structurally identical to what an eval-runner / CLI script would forward (`["a.b.c=...", ...]`), so the same `apply_hydra_variation_overrides` signature drops straight into both call sites.
 
 ## Why this fits the existing surface
 
 - `_compose_variations_event_cfg` now filters on `v.enabled` itself (one extra line). The events_cfg it produces is identical to today, just sourced from a wider `get_variations()` and filtered locally.
-- `set_sampler(SamplerCfg)` already handles the cfg-sync branch we need, so the round-trip stays a one-liner (see `VariationBase.set_sampler`).
+- `set_sampler(SamplerCfg)` already handles the cfg-sync branch `apply_cfg` needs, so the per-variation write-back stays a one-liner (see `VariationBase.set_sampler`).
 - The schema construction is the same dynamic-`make_dataclass` pattern already validated in [isaaclab_arena/examples/hydra_dynamic_schema_example.py](isaaclab_arena/examples/hydra_dynamic_schema_example.py); the only delta is using the real `ObjectColorVariationCfg` instead of a toy dataclass.
+- `VariationBase.apply_cfg` is the only place the variation write-back lives. The builder talks to variations via that single method, so adding `ObjectMassVariation` / `LightingVariation` / ... is a "ship a new `*Cfg` + concrete class" exercise — no edits to `ArenaEnvBuilder`.
 
 ## Open questions / risks
 
-- **`@configclass` as a Hydra structured-config node.** Hydra accepts any dataclass-like, and `isaaclab.utils.configclass` is dataclass-based; expected to "just work" but we should sanity-check during implementation that `OmegaConf.structured(ObjectColorVariationCfg())` succeeds and that overriding `sampler.low=[0.4,0.4,0.4]` round-trips a `list[float]` correctly. A stdlib `@dataclass` mock of the same shape passed locally; the real configclass path needs the Isaac Sim container.
+- **`@configclass` as a Hydra structured-config node (still container-only).** `OmegaConf.to_object` round-tripping a `@configclass`-decorated `VariationsCfg` tree is now load-bearing for `compose_variations_cfg`; the previous explicit-walk version sidestepped this by reading values straight off the `DictConfig`. A stdlib `@dataclass` mock of the shape passes locally; the real `@configclass` path still needs the Isaac Sim container. Fallback (if `to_object` misbehaves): reconstruct each per-variation cfg field-by-field inside `compose_variations_cfg` via `OmegaConf.to_container` + per-cfg-class constructor calls. `apply_hydra_variation_overrides` and `VariationBase.apply_cfg` stay unchanged.
 - **Single sampler type.** `ObjectColorVariationCfg.sampler` is typed as `UniformSamplerCfg`, so the schema forces uniform RGB — exactly the POC scope. Discrete palettes (`DiscreteChoiceSampler`) will need a tagged-union extension later; out of scope here.
-- **Single `initialize` per process.** Hydra's `initialize` raises if called twice with `config_path` overlap. For the POC the notebook calls `apply_hydra_variation_overrides` once, which is fine; we'll need a `GlobalHydra.instance().clear()` guard if/when this runs inside the `eval_runner` loop.
+- **~~Single `initialize` per process.~~** Addressed: `compose_variations_cfg` calls `GlobalHydra.instance().clear()` on entry before `hydra.initialize(...)`. Safe to call repeatedly across notebook cells / an eval-runner loop.
 
 ## Out of scope (this slice)
 
