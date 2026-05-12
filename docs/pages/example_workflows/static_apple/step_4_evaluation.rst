@@ -2,9 +2,10 @@ Closed-Loop Policy Inference and Evaluation
 -------------------------------------------
 
 This workflow demonstrates running the finetuned GR00T N1.7 policy in closed-loop and evaluating it
-in the Arena Unitree G1 Static Apple-to-Plate Task environment using Arena's **server-client (remote-policy)
-architecture**. The server hosts the finetuned checkpoint outside the Arena container; the Arena
-container runs the simulation and queries the server over ZeroMQ.
+in the Arena Unitree G1 Static Apple-to-Plate Task environment using Arena's **server-client
+(remote-policy) architecture**. The GR00T policy server, which hosts the finetuned checkpoint, runs
+outside the Arena container. The Arena container itself runs only the simulation and a thin GR00T
+client that queries the server for actions.
 
 Note that this tutorial assumes that you've completed the
 :doc:`preceding step (Policy Training) <step_3_policy_training>` or downloaded the
