@@ -215,11 +215,12 @@ whether the finetuned policy actually works in the AGILE-joint runtime:
    between training and serving.
 
 #. **Pick** ``action_horizon`` **deliberately.** The default (40) gives an 800 ms inference chunk at
-   50 Hz, which trades responsiveness against compute. For static apple-to-plate (~600 step
-   episodes) 40 is a good default. Going lower (e.g., 20) gives more responsive closed-loop control
-   at the cost of more frequent policy queries; going higher (e.g., 60) gives a longer inference
-   horizon at the cost of more compute per step. Whichever value you pick, **keep the modality
-   config and the server YAML in sync** (see the caution above).
+   50 Hz, which trades responsiveness against compute, and is the maximum supported by the released
+   GR00T N1.7 base model (``max_action_horizon = 40`` is baked into the checkpoint). For static
+   apple-to-plate (~600 step episodes) 40 is a good default. You can go lower (e.g., 20) for more
+   responsive closed-loop control at the cost of more frequent policy queries; you cannot go higher
+   without retraining the base model. Whichever value you pick, **keep the modality config and the
+   server YAML in sync** (see the caution above).
 
 If you adjust any of these and the resulting checkpoint behaves badly at evaluation, the most
 common culprits in order are: (i) too few or low-quality demonstrations, (ii) modality config /
