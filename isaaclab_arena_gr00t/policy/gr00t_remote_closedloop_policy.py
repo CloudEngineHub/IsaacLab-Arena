@@ -258,13 +258,17 @@ class Gr00tRemoteClosedloopPolicy(PolicyBase):
     def close(self) -> None:
         """Release Arena-side resources for the remote GR00T policy client."""
         client = self._client
-        if client is not None:
-            socket = getattr(client, "socket", None)
-            if socket is not None:
-                socket.close(linger=0)
-            context = getattr(client, "context", None)
-            if context is not None:
-                context.term()
-        self._client = None
-        self._chunking_state = None
-        self.modality_configs = None
+        try:
+            if client is not None:
+                socket = getattr(client, "socket", None)
+                context = getattr(client, "context", None)
+                try:
+                    if socket is not None:
+                        socket.close(linger=0)
+                finally:
+                    if context is not None:
+                        context.term()
+        finally:
+            self._client = None
+            self._chunking_state = None
+            self.modality_configs = None
