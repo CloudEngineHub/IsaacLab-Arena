@@ -29,6 +29,12 @@ class PooledObjectPlacer:
     * :meth:`sample_with_replacement` — picks *count* layouts at random
       (non-consuming).  Used for static initial positions.
 
+    Reproducibility is controlled by ``placer_params.placement_seed``: when set,
+    refills advance a deterministic seed stream (via ``seed_offset``) and
+    ``sample_with_replacement`` draws from a seeded ``random.Random``. When
+    ``placement_seed`` is None, both solver init and sampling fall back to
+    global RNG state and are non-deterministic.
+
     Args:
         objects: All objects (including anchors) participating in relation solving.
         placer_params: Parameters forwarded to ``ObjectPlacer`` for the batched solve.
@@ -41,14 +47,15 @@ class PooledObjectPlacer:
         placer_params: ObjectPlacerParams,
         pool_size: int = 100,
     ) -> None:
-        if pool_size < 1:
-            raise ValueError(f"pool_size must be >= 1, got {pool_size}")
+        assert pool_size >= 1, f"pool_size must be >= 1, got {pool_size}"
 
         self._objects = objects
         self._placer = ObjectPlacer(params=placer_params)
         self._pool_size = pool_size
         self._layouts: list[PlacementResult] = []
         self._next_idx: int = 0
+        self._rng = random.Random(placer_params.placement_seed)
+        self._next_seed_offset: int = 0
 
         # Pre-solve the initial batch (runs the gradient solver, no simulation is needed).
         self._solve_and_store(pool_size)
@@ -74,8 +81,19 @@ class PooledObjectPlacer:
 
         # place() runs: random init → gradient solve → validate → rank.
         # It returns up to num_layouts results; some may fail validation.
+        # Advancing seed_offset by the candidate count keeps successive batches on
+        # a fresh, non-overlapping seed range so refills don't replay the initial pool.
+        seed_offset = self._next_seed_offset
+        num_candidates = self._placer.params.max_placement_attempts * num_layouts
         with torch.inference_mode(False):
-            result = self._placer.place(self._objects, num_envs=num_layouts, result_per_env=True)
+            result = self._placer.place(
+                self._objects, num_envs=num_layouts, result_per_env=True, seed_offset=seed_offset
+            )
+        # Keep the offset bookkeeping in step with reality: when placement_seed is None,
+        # place() ignores seed_offset entirely, so advancing it would suggest a seed stream
+        # that does not exist.
+        if self._placer.params.placement_seed is not None:
+            self._next_seed_offset += num_candidates
 
         # TODO(@zhx06): Simplify once ObjectPlacer.place() always returns MultiEnvPlacementResult.
         all_results = result.results if isinstance(result, MultiEnvPlacementResult) else [result]
@@ -122,7 +140,7 @@ class PooledObjectPlacer:
         Used by ``resolve_on_reset=False`` to assign initial positions
         that persist across resets.
         """
-        return random.choices(self._layouts, k=count)
+        return self._rng.choices(self._layouts, k=count)
 
     @property
     def remaining(self) -> int:

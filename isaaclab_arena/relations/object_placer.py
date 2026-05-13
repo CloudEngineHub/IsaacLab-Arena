@@ -74,6 +74,8 @@ class ObjectPlacer:
         objects: list[ObjectBase],
         num_envs: int = 1,
         result_per_env: bool = True,
+        *,
+        seed_offset: int = 0,
     ) -> PlacementResult | MultiEnvPlacementResult:
         """Place objects according to their spatial relations.
 
@@ -85,6 +87,11 @@ class ObjectPlacer:
             result_per_env: When True (default), each environment gets a distinct
                 layout. When False, a single best layout is solved and applied
                 identically to all environments.
+            seed_offset: Added to ``placement_seed`` for each candidate. Callers
+                that issue multiple ``place()`` calls (e.g. a pool refill) pass
+                the cumulative candidate count here so successive batches use a
+                fresh, non-overlapping seed range. Ignored when
+                ``placement_seed`` is None (no seeding takes place).
 
         Returns:
             PlacementResult when a single layout is produced (num_envs=1 or
@@ -128,7 +135,7 @@ class ObjectPlacer:
         initial_positions: list[dict[ObjectBase, tuple[float, float, float]]] = []
         for candidate_idx in range(num_candidates):
             if generator is not None:
-                generator.manual_seed(self.params.placement_seed + candidate_idx)
+                generator.manual_seed(self.params.placement_seed + seed_offset + candidate_idx)
             initial_positions.append(self._generate_initial_positions(objects, anchor_objects_set, generator))
 
         all_positions = self._solver.solve(objects, initial_positions)
