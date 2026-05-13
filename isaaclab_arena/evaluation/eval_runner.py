@@ -210,6 +210,7 @@ def main():
 
                 finally:
                     try:
+                        # close the policy and env, also collect garbage and clear cuda cache
                         _close_job_resources(policy, env)
                     finally:
                         policy = None
