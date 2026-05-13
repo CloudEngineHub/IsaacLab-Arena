@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+
 import torch
 from collections.abc import Sequence
 from dataclasses import MISSING
@@ -10,9 +11,7 @@ from dataclasses import MISSING
 import isaaclab.envs.mdp as mdp_isaac_lab
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as PoseUtils
-from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation.articulation_cfg import ArticulationCfg
-from isaaclab.controllers import OperationalSpaceControllerCfg
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
 from isaaclab.envs import ManagerBasedRLMimicEnv
 from isaaclab.envs.mdp.actions.actions_cfg import (
@@ -39,9 +38,7 @@ from isaaclab_arena.embodiments.common.arm_mode import ArmMode
 from isaaclab_arena.embodiments.common.mimic_utils import get_rigid_and_articulated_object_poses
 from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
 from isaaclab_arena.embodiments.franka.observations import gripper_pos
-from isaaclab_arena.tasks.observations.gear_insertion_observations import NistGearInsertionPolicyObservations
 from isaaclab_arena.utils.pose import Pose
-from isaaclab_arena_environments.mdp.nist_gear_insertion_osc_action import NistGearInsertionOscActionCfg
 
 _DEFAULT_CAMERA_OFFSET = Pose(position_xyz=(0.11, -0.031, -0.074), rotation_xyzw=(0.0, 0.0, -0.66262, -0.74896))
 
@@ -203,278 +200,6 @@ class FrankaJointPosActionsCfg:
         open_command_expr={"panda_finger_.*": 0.04},
         close_command_expr={"panda_finger_.*": 0.0},
     )
-
-
-_FRANKA_MIMIC_OSC_USD_PATH = f"{ISAACLAB_NUCLEUS_DIR}/Factory/franka_mimic.usd"
-
-# Assembly tasks use stiffer contact settings than the default Franka assets.
-_FRANKA_MIMIC_OSC_RIGID_PROPS = sim_utils.RigidBodyPropertiesCfg(
-    disable_gravity=True,
-    max_depenetration_velocity=5.0,
-    linear_damping=0.0,
-    angular_damping=0.0,
-    max_linear_velocity=1000.0,
-    max_angular_velocity=3666.0,
-    enable_gyroscopic_forces=True,
-    solver_position_iteration_count=192,
-    solver_velocity_iteration_count=1,
-    max_contact_impulse=1e32,
-)
-
-_FRANKA_MIMIC_OSC_ARTICULATION_PROPS = sim_utils.ArticulationRootPropertiesCfg(
-    enabled_self_collisions=False,
-    solver_position_iteration_count=192,
-    solver_velocity_iteration_count=1,
-)
-
-_FRANKA_MIMIC_OSC_COLLISION_PROPS = sim_utils.CollisionPropertiesCfg(contact_offset=0.005, rest_offset=0.0)
-
-# Default pose from the Factory-style Franka mimic asset.
-_FRANKA_MIMIC_OSC_JOINT_POS = {
-    "panda_joint1": 0.0,
-    "panda_joint2": -0.569,
-    "panda_joint3": 0.0,
-    "panda_joint4": -2.810,
-    "panda_joint5": 0.0,
-    "panda_joint6": 3.037,
-    "panda_joint7": 0.741,
-    "panda_finger_joint2": 0.04,
-}
-
-# OSC writes joint torques directly for the arm; the hand remains position controlled.
-_FRANKA_MIMIC_OSC_ACTUATORS = {
-    "panda_arm1": ImplicitActuatorCfg(
-        joint_names_expr=["panda_joint[1-4]"],
-        stiffness=0.0,
-        damping=0.0,
-        friction=0.0,
-        armature=0.0,
-        effort_limit_sim=87,
-        velocity_limit_sim=124.6,
-    ),
-    "panda_arm2": ImplicitActuatorCfg(
-        joint_names_expr=["panda_joint[5-7]"],
-        stiffness=0.0,
-        damping=0.0,
-        friction=0.0,
-        armature=0.0,
-        effort_limit_sim=12,
-        velocity_limit_sim=149.5,
-    ),
-    "panda_hand": ImplicitActuatorCfg(
-        joint_names_expr=["panda_finger_joint[1-2]"],
-        effort_limit_sim=40.0,
-        velocity_limit_sim=0.04,
-        stiffness=7500.0,
-        damping=173.0,
-        friction=0.1,
-        armature=0.0,
-    ),
-}
-
-# Franka mimic USD with contact sensors enabled for the wrist force body.
-_FRANKA_MIMIC_OSC_CFG = ArticulationCfg(
-    prim_path="{ENV_REGEX_NS}/Robot",
-    spawn=sim_utils.UsdFileCfg(
-        usd_path=_FRANKA_MIMIC_OSC_USD_PATH,
-        activate_contact_sensors=True,
-        rigid_props=_FRANKA_MIMIC_OSC_RIGID_PROPS,
-        articulation_props=_FRANKA_MIMIC_OSC_ARTICULATION_PROPS,
-        collision_props=_FRANKA_MIMIC_OSC_COLLISION_PROPS,
-    ),
-    init_state=ArticulationCfg.InitialStateCfg(
-        joint_pos=_FRANKA_MIMIC_OSC_JOINT_POS,
-        pos=(0.0, 0.0, 0.0),
-        rot=(0.0, 0.0, 0.0, 1.0),
-    ),
-    actuators=_FRANKA_MIMIC_OSC_ACTUATORS,
-)
-
-_NIST_GEAR_INSERTION_INITIAL_JOINT_POSE = [
-    0.561824,
-    0.287201,
-    -0.543103,
-    -2.410188,
-    0.507908,
-    2.847644,
-    0.454298,
-    0.04,
-    0.04,
-]
-
-
-def franka_gripper_joint_setter(
-    joint_pos: torch.Tensor,
-    row_indices: Sequence[int],
-    finger_joint_indices: Sequence[int],
-    width: float,
-) -> None:
-    """Set Franka Panda finger joints to achieve a given total opening width."""
-    for jid in finger_joint_indices:
-        joint_pos[row_indices, jid] = width / 2.0
-
-
-def _nist_gear_insertion_ee_frame_cfg() -> FrameTransformerCfg:
-    return FrameTransformerCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/panda_link0",
-        debug_vis=False,
-        target_frames=[
-            FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/panda_fingertip_centered",
-                name="end_effector",
-                offset=OffsetCfg(pos=(0.0, 0.0, 0.0)),
-            ),
-            FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/panda_rightfinger",
-                name="tool_rightfinger",
-                offset=OffsetCfg(pos=(0.0, 0.0, 0.046)),
-            ),
-            FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/panda_leftfinger",
-                name="tool_leftfinger",
-                offset=OffsetCfg(pos=(0.0, 0.0, 0.046)),
-            ),
-        ],
-    )
-
-
-@register_asset
-class FrankaNistGearInsertionOscEmbodiment(FrankaEmbodimentBase):
-    """Franka embodiment for NIST gear insertion with OSC torque control."""
-
-    name = "franka_nist_gear_osc"
-
-    def __init__(
-        self,
-        enable_cameras: bool = False,
-        initial_pose: Pose | None = None,
-        initial_joint_pose: list[float] | None = None,
-        concatenate_observation_terms: bool = False,
-        arm_mode: ArmMode | None = None,
-        camera_offset: Pose | None = _DEFAULT_CAMERA_OFFSET,
-        is_tiled_camera: bool = False,
-        fixed_asset_name: str = "gears_and_base",
-        peg_offset: tuple[float, float, float] = (0.02025, 0.0, 0.025),
-    ):
-        super().__init__(
-            enable_cameras=enable_cameras,
-            initial_pose=initial_pose,
-            initial_joint_pose=initial_joint_pose,
-            concatenate_observation_terms=concatenate_observation_terms,
-            arm_mode=arm_mode,
-            camera_offset=camera_offset,
-            is_tiled_camera=is_tiled_camera,
-        )
-        self.scene_config.robot = _FRANKA_MIMIC_OSC_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
-        self.scene_config.ee_frame = _nist_gear_insertion_ee_frame_cfg()
-        self.set_initial_joint_pose(initial_joint_pose or _NIST_GEAR_INSERTION_INITIAL_JOINT_POSE)
-        self.action_config = FrankaNistGearInsertionOscActionsCfg(
-            fixed_asset_name=fixed_asset_name,
-            peg_offset=peg_offset,
-        )
-
-        self.observation_config = FrankaNistGearInsertionObservationsCfg(
-            fixed_asset_name=fixed_asset_name,
-            peg_offset=peg_offset,
-            fingertip_body_name=self.get_command_body_name(),
-            concatenate_observation_terms=self.concatenate_observation_terms,
-        )
-
-        self.reward_config.action_rate = None
-        self.reward_config.joint_vel = None
-
-    def get_command_body_name(self) -> str:
-        return "panda_fingertip_centered"
-
-    def get_gear_insertion_grasp_config(self) -> dict[str, object]:
-        return {
-            "hand_grasp_width": 0.03,
-            "hand_close_width": 0.03,
-            "gripper_joint_setter_func": franka_gripper_joint_setter,
-            "end_effector_body_name": "panda_hand",
-            "finger_joint_names": "panda_finger_joint[1-2]",
-            "grasp_rot_offset": [1.0, 0.0, 0.0, 0.0],
-            "grasp_offset": [0.02, 0.0, -0.128],
-            "arm_joint_names": "panda_joint[1-7]",
-        }
-
-
-@configclass
-class FrankaNistGearInsertionObservationsCfg:
-    """Observation specification for the NIST gear insertion OSC policy."""
-
-    @configclass
-    class PolicyCfg(ObsGroup):
-        """24-D NIST gear insertion policy observation."""
-
-        nist_gear_policy_obs: ObsTerm = MISSING
-
-        def __post_init__(self):
-            self.enable_corruption = False
-            self.concatenate_terms = False
-
-    policy: PolicyCfg = MISSING
-
-    def __init__(
-        self,
-        fixed_asset_name: str = "gears_and_base",
-        peg_offset: tuple[float, float, float] = (0.02025, 0.0, 0.025),
-        fingertip_body_name: str = "panda_fingertip_centered",
-        concatenate_observation_terms: bool = False,
-    ):
-        self.policy = self.PolicyCfg()
-        self.policy.nist_gear_policy_obs = ObsTerm(
-            func=NistGearInsertionPolicyObservations,
-            params={
-                "robot_name": "robot",
-                "board_name": fixed_asset_name,
-                "peg_offset": list(peg_offset),
-                "fingertip_body_name": fingertip_body_name,
-                "force_body_name": "force_sensor",
-                "pos_noise_level": 0.0,
-                "rot_noise_level_deg": 0.0,
-                "force_noise_level": 0.0,
-            },
-        )
-        self.policy.concatenate_terms = concatenate_observation_terms
-
-
-@configclass
-class FrankaNistGearInsertionOscActionsCfg:
-    """Action specification for the NIST gear insertion OSC Franka embodiment."""
-
-    arm_action: ActionTermCfg = MISSING
-    gripper_action: ActionTermCfg | None = None
-
-    def __init__(
-        self,
-        fixed_asset_name: str = "gears_and_base",
-        peg_offset: tuple[float, float, float] = (0.02025, 0.0, 0.025),
-    ):
-        self.arm_action = NistGearInsertionOscActionCfg(
-            asset_name="robot",
-            joint_names=["panda_joint[1-7]"],
-            body_name="panda_fingertip_centered",
-            controller_cfg=OperationalSpaceControllerCfg(
-                target_types=["pose_abs"],
-                impedance_mode="fixed",
-                inertial_dynamics_decoupling=True,
-                partial_inertial_dynamics_decoupling=False,
-                gravity_compensation=False,
-                motion_stiffness_task=[565.0, 565.0, 565.0, 28.0, 28.0, 28.0],
-                motion_damping_ratio_task=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-                nullspace_control="position",
-                nullspace_stiffness=10.0,
-                nullspace_damping_ratio=1.0,
-            ),
-            position_scale=1.0,
-            orientation_scale=1.0,
-            nullspace_joint_pos_target="default",
-            fixed_asset_name=fixed_asset_name,
-            peg_offset=peg_offset,
-            force_body_name="force_sensor",
-        )
-        self.gripper_action = None
 
 
 @configclass

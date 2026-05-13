@@ -8,9 +8,21 @@
 from __future__ import annotations
 
 import argparse
+from typing import TYPE_CHECKING
 
 from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
+
+if TYPE_CHECKING:
+    from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
+
+_FRANKA_NIST_GEAR_INSERTION_OSC_EMBODIMENT = "franka_nist_gear_insertion_osc"
+_PEG_TIP_OFFSET = (0.02025, 0.0, 0.025)
+_PEG_BASE_OFFSET = (0.02025, 0.0, 0.0)
+_GEAR_PEG_HEIGHT = 0.02
+_SUCCESS_Z_FRACTION = 0.20
+_XY_THRESHOLD = 0.0025
+_EPISODE_LENGTH_S = 15.0
 
 
 @register_environment
@@ -19,24 +31,19 @@ class NISTAssembledGearMeshOSCEnvironment(ExampleEnvironmentBase):
 
     name: str = "nist_assembled_gear_mesh_osc"
 
-    def get_env(self, args_cli: argparse.Namespace):
+    def get_env(self, args_cli: argparse.Namespace) -> IsaacLabArenaEnvironment:
         import isaaclab.sim as sim_utils
 
         import isaaclab_arena_environments.mdp as mdp
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene
-        from isaaclab_arena.tasks.nist_gear_insertion_task import (
-            GearInsertionGeometryCfg,
-            GraspCfg,
-            NistGearInsertionTask,
-        )
+        from isaaclab_arena.tasks.nist_gear_insertion.task import GearInsertionGeometryCfg, NistGearInsertionRLTask
         from isaaclab_arena.utils.pose import Pose
-
-        peg_tip_offset = (0.02025, 0.0, 0.025)
-        peg_base_offset = (0.02025, 0.0, 0.0)
-        success_z_fraction = 0.20
-        xy_threshold = 0.0025
-        episode_length_s = 15.0
+        from isaaclab_arena_environments.mdp.nist_gear_insertion.franka_osc_cfg import (
+            FrankaNistGearInsertionObservationsCfg,
+            FrankaNistGearInsertionOscActionsCfg,
+        )
+        from isaaclab_arena_environments.mdp.nist_gear_insertion.osc_rewards import NistGearInsertionOscRewardsCfg
 
         table = self.asset_registry.get_asset_by_name("table")()
         assembled_board = self.asset_registry.get_asset_by_name("nist_board_assembled")()
@@ -45,13 +52,29 @@ class NISTAssembledGearMeshOSCEnvironment(ExampleEnvironmentBase):
         light_spawner_cfg = sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=1500.0)
         light = self.asset_registry.get_asset_by_name("light")(spawner_cfg=light_spawner_cfg)
 
-        embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(
+        embodiment = self.asset_registry.get_asset_by_name(_FRANKA_NIST_GEAR_INSERTION_OSC_EMBODIMENT)(
             enable_cameras=args_cli.enable_cameras,
             concatenate_observation_terms=True,
-            fixed_asset_name=gears_and_base.name,
-            peg_offset=peg_tip_offset,
         )
-
+        embodiment.action_config = FrankaNistGearInsertionOscActionsCfg(
+            fixed_asset_name=gears_and_base.name,
+            peg_offset=_PEG_TIP_OFFSET,
+        )
+        embodiment.observation_config = FrankaNistGearInsertionObservationsCfg(
+            fixed_asset_name=gears_and_base.name,
+            peg_offset=_PEG_TIP_OFFSET,
+            fingertip_body_name=embodiment.get_command_body_name(),
+            concatenate_observation_terms=embodiment.concatenate_observation_terms,
+        )
+        embodiment.reward_config = NistGearInsertionOscRewardsCfg(
+            gear_name=medium_gear.name,
+            board_name=gears_and_base.name,
+            peg_offset=_PEG_BASE_OFFSET,
+            held_gear_base_offset=_PEG_BASE_OFFSET,
+            gear_peg_height=_GEAR_PEG_HEIGHT,
+            success_z_fraction=_SUCCESS_Z_FRACTION,
+            xy_threshold=_XY_THRESHOLD,
+        )
         if args_cli.teleop_device is not None:
             teleop_device = self.device_registry.get_device_by_name(args_cli.teleop_device)()
         else:
@@ -67,24 +90,24 @@ class NISTAssembledGearMeshOSCEnvironment(ExampleEnvironmentBase):
         )
         scene = Scene(assets=[table, assembled_board, medium_gear, gears_and_base, light])
 
-        grasp_cfg = GraspCfg(**embodiment.get_gear_insertion_grasp_config())
         geometry_cfg = GearInsertionGeometryCfg(
-            peg_offset_from_board=list(peg_base_offset),
-            peg_offset_for_obs=list(peg_tip_offset),
-            success_z_fraction=success_z_fraction,
-            xy_threshold=xy_threshold,
+            peg_offset_from_board=list(_PEG_BASE_OFFSET),
+            peg_offset_for_obs=list(_PEG_TIP_OFFSET),
+            success_z_fraction=_SUCCESS_Z_FRACTION,
+            xy_threshold=_XY_THRESHOLD,
         )
 
-        task = NistGearInsertionTask(
+        task = NistGearInsertionRLTask(
             assembled_board=assembled_board,
             held_gear=medium_gear,
             background_scene=table,
             gear_base_asset=gears_and_base,
             geometry_cfg=geometry_cfg,
-            episode_length_s=episode_length_s,
-            grasp_cfg=grasp_cfg,
+            episode_length_s=_EPISODE_LENGTH_S,
+            grasp_cfg=embodiment.get_gear_insertion_grasp_config(),
+            fingertip_body_name=embodiment.get_command_body_name(),
             enable_randomization=True,
-            rl_training_mode=args_cli.rl_training_mode,
+            disable_success_termination=args_cli.disable_success_termination,
         )
 
         return IsaacLabArenaEnvironment(
@@ -94,18 +117,21 @@ class NISTAssembledGearMeshOSCEnvironment(ExampleEnvironmentBase):
             task=task,
             teleop_device=teleop_device,
             env_cfg_callback=mdp.assembly_env_cfg_callback,
-            rl_framework_entry_point="rl_games_cfg_entry_point",
-            rl_policy_cfg="isaaclab_arena_examples.policy:nist_gear_insertion_osc_rl_games.yaml",
         )
 
     @staticmethod
     def add_cli_args(parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("--embodiment", type=str, default="franka_nist_gear_osc", help="Robot embodiment")
         parser.add_argument(
             "--teleop_device", type=str, default=None, help="Teleoperation device (e.g., keyboard, spacemouse)"
         )
         parser.add_argument(
-            "--rl_training_mode",
+            "--disable_success_termination",
             action="store_true",
-            help="Disable success termination (use when training with RL-Games).",
+            help="Disable success termination during training.",
+        )
+        parser.add_argument(
+            "--rl_training_mode",
+            dest="disable_success_termination",
+            action="store_true",
+            help="Alias for --disable_success_termination.",
         )

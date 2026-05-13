@@ -24,6 +24,37 @@ from isaaclab_arena.assets.register import register_policy
 from isaaclab_arena.policy.policy_base import PolicyBase
 
 
+class _RlGamesInferenceEnvWrapper(RlGamesVecEnvWrapper):
+    """``RlGamesVecEnvWrapper`` that avoids extra simulator resets during inference.
+
+    Mirrors :class:`_RslRlInferenceEnvWrapper`: ``policy_runner.py`` already
+    resets the environment before requesting the first action, so wrapper setup
+    should read the cached observation buffer instead of triggering a second
+    reset and recording a phantom episode.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        rl_device: str,
+        clip_obs: float,
+        clip_actions: float,
+        obs_groups: dict[str, list[str]] | None = None,
+        concate_obs_group: bool = True,
+    ):
+        original_reset = env.reset
+        # Return cached obs during wrapper setup to avoid recording a phantom episode.
+        env.reset = lambda *args, **kwargs: (dict(env.unwrapped.obs_buf), {})
+        try:
+            super().__init__(env, rl_device, clip_obs, clip_actions, obs_groups, concate_obs_group)
+        finally:
+            env.reset = original_reset
+
+    def process_observations(self, observation: GymSpacesDict) -> dict[str, torch.Tensor]:
+        """Process Arena observations through the RL-Games wrapper."""
+        return self._process_obs(dict(observation))
+
+
 @dataclass
 class RlGamesActionPolicyConfig:
     """Configuration for RL-Games action policy.
@@ -34,7 +65,7 @@ class RlGamesActionPolicyConfig:
     checkpoint_path: str
     """Path to the RL-Games .pth checkpoint file."""
 
-    agent_cfg_path: Path = None
+    agent_cfg_path: Path | None = None
     """Path to the RL-Games agent YAML configuration file.
 
     When using the CLI (``policy_runner.py``), this is set via ``--agent_cfg_path``.
@@ -60,29 +91,25 @@ class RlGamesActionPolicyConfig:
 class RlGamesActionPolicy(PolicyBase):
     """Policy that uses a trained RL-Games model for inference.
 
-    Wraps the RL-Games player for use with the Arena policy runner and eval runner.
-    Handles observation processing (concatenation, clipping) and LSTM state management.
-
+    Wraps the RL-Games player for use with the Arena policy runner and eval
+    runner. Handles observation processing, clipping, and RNN state management.
     """
 
     name = "rl_games"
     config_class = RlGamesActionPolicyConfig
 
-    def __init__(self, config: RlGamesActionPolicyConfig, args_cli: argparse.Namespace | None = None):
+    def __init__(self, config: RlGamesActionPolicyConfig):
         super().__init__(config)
         self.config: RlGamesActionPolicyConfig = config
         self._player: BasePlayer | None = None
-        self._wrapper: RlGamesVecEnvWrapper | None = None
+        self._wrapper: _RlGamesInferenceEnvWrapper | None = None
         self._rnn_initialized = False
-        self.args_cli = args_cli
 
     def _load_policy(self, env: gym.Env) -> None:
-        """Set up the RL-Games infrastructure and load the checkpoint.
+        """Set up RL-Games infrastructure and load the checkpoint."""
+        if self.config.agent_cfg_path is None:
+            raise ValueError("RL-Games policy requires --agent_cfg_path.")
 
-        Creates the RlGamesVecEnvWrapper (for observation processing only),
-        registers the env with the RL-Games runner, creates the player,
-        and restores the checkpoint weights.
-        """
         with open(self.config.agent_cfg_path) as f:
             agent_cfg = yaml.safe_load(f)
 
@@ -99,7 +126,7 @@ class RlGamesActionPolicy(PolicyBase):
         obs_groups = agent_cfg["params"]["env"].get("obs_groups")
         concate_obs = agent_cfg["params"]["env"].get("concate_obs_groups", True)
 
-        self._wrapper = RlGamesVecEnvWrapper(
+        self._wrapper = _RlGamesInferenceEnvWrapper(
             env,
             device,
             clip_obs,
@@ -134,8 +161,7 @@ class RlGamesActionPolicy(PolicyBase):
         assert self._player is not None
         assert self._wrapper is not None
 
-        obs_copy = dict(observation)
-        obs_rlg = self._wrapper._process_obs(obs_copy)
+        obs_rlg = self._wrapper.process_observations(observation)
         obs_tensor = obs_rlg["obs"]
 
         if not self._rnn_initialized:
@@ -157,16 +183,16 @@ class RlGamesActionPolicy(PolicyBase):
         if not hasattr(self._player, "states") or self._player.states is None:
             return
         if env_ids is None:
-            for s in self._player.states:
-                s.zero_()
+            for state in self._player.states:
+                state.zero_()
         else:
-            for s in self._player.states:
-                s[:, env_ids, :] = 0.0
+            for state in self._player.states:
+                state[:, env_ids, :] = 0.0
 
     @classmethod
     def from_dict(cls, config_dict: dict) -> RlGamesActionPolicy:
         config = RlGamesActionPolicyConfig(**config_dict)
-        return cls(config, args_cli=None)
+        return cls(config)
 
     @staticmethod
     def add_args_to_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -175,7 +201,7 @@ class RlGamesActionPolicy(PolicyBase):
             "--checkpoint_path",
             type=str,
             required=True,
-            help="Path to the .pth checkpoint file containing the RL-Games policy",
+            help="Path to the .pth checkpoint file containing the RL-Games policy.",
         )
         group.add_argument(
             "--agent_cfg_path",
@@ -200,4 +226,4 @@ class RlGamesActionPolicy(PolicyBase):
     @staticmethod
     def from_args(args: argparse.Namespace) -> RlGamesActionPolicy:
         config = RlGamesActionPolicyConfig.from_cli_args(args)
-        return RlGamesActionPolicy(config, args_cli=args)
+        return RlGamesActionPolicy(config)
