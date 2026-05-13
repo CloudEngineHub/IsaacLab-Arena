@@ -4,19 +4,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import os
 import torch
 import tqdm
+from gymnasium.wrappers import RecordVideo
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
+from isaaclab_arena.evaluation.camera_video import CameraObsVideoRecorder
 from isaaclab_arena.evaluation.policy_runner_cli import add_policy_runner_arguments
 from isaaclab_arena.metrics.metrics_logger import metrics_to_plain_python_types
 from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppContext
 from isaaclab_arena.utils.multiprocess import get_local_rank, get_world_size
 from isaaclab_arena.utils.random import set_seed
 from isaaclab_arena_environments.cli import get_arena_builder_from_cli, get_isaaclab_arena_environments_cli_parser
-from isaaclab_arena_gr00t.utils.groot_path import ensure_groot_deps_in_path
 
 if TYPE_CHECKING:
     from isaaclab_arena.policy.policy_base import PolicyBase
@@ -167,9 +169,10 @@ def main():
             args_cli.distributed = True
             args_cli.device = f"cuda:{local_rank}"
 
-        # Build scene
+        # Build scene. Use rgb_array render mode when recording so RecordVideo can grab frames.
         arena_builder = get_arena_builder_from_cli(args_cli)
-        env, cfg = arena_builder.make_registered_and_return_cfg()
+        render_mode = "rgb_array" if args_cli.video else None
+        env, cfg = arena_builder.make_registered_and_return_cfg(render_mode=render_mode)
 
         # Per-rank seed when distributed so each process has a different seed
         seed = args_cli.seed
@@ -197,6 +200,45 @@ def main():
             else:
                 raise ValueError(f"[Rank {local_rank}/{world_size}] Either num_steps or num_episodes must be provided")
 
+        # Optionally wrap with RecordVideo and/or CameraObsVideoRecorder. The two flags
+        # are independent: --video records the kit viewport (via env.render()),
+        # --camera_video records the embodiment-mounted cameras (from obs["camera_obs"]).
+        if args_cli.video or args_cli.camera_video:
+            os.makedirs(args_cli.video_dir, exist_ok=True)
+            if num_steps is not None:
+                video_length = num_steps
+            else:
+                # When num_episodes is set, capture exactly one episode's worth of frames.
+                # max_episode_length is in environment steps, which matches our rollout cadence.
+                video_length = num_episodes * env.unwrapped.max_episode_length
+
+        if args_cli.video:
+            env = RecordVideo(
+                env,
+                video_folder=args_cli.video_dir,
+                step_trigger=lambda step: step == 0,
+                video_length=video_length,
+                disable_logger=True,
+            )
+            print(
+                f"[Rank {local_rank}/{world_size}] Recording {video_length}-step viewport video to:"
+                f" {args_cli.video_dir}"
+            )
+
+        if args_cli.camera_video:
+            # Record one mp4 per camera in obs["camera_obs"] (what the policy sees),
+            # using the same encoder as RecordVideo.
+            env = CameraObsVideoRecorder(
+                env,
+                video_folder=args_cli.video_dir,
+                step_trigger=lambda step: step == 0,
+                video_length=video_length,
+            )
+            print(
+                f"[Rank {local_rank}/{world_size}] Recording {video_length}-step per-camera videos to:"
+                f" {args_cli.video_dir}"
+            )
+
         steps_str = f"{num_steps} steps" if num_steps is not None else f"{num_episodes} episodes"
         print(f"[Rank {local_rank}/{world_size}] Starting rollout ({steps_str})")
         metrics = rollout_policy(env, policy, num_steps, num_episodes, args_cli.language_instruction)
@@ -216,6 +258,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # TODO(xinjie.yao, 2026.03.31): Remove it after policy sever-client is implemented properly in v0.3.
-    ensure_groot_deps_in_path()
     main()

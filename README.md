@@ -12,7 +12,7 @@
 [![Linux](https://img.shields.io/badge/platform-linux--64-orange.svg)](https://releases.ubuntu.com/22.04/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-yellow.svg)](LICENSE.md)
 
-[Documentation](https://isaac-sim.github.io/IsaacLab-Arena/main/index.html) · [NVIDIA Blog Post](https://developer.nvidia.com/blog/simplify-generalist-robot-policy-evaluation-in-simulation-with-nvidia-isaac-lab-arena/) · [Report a Bug](https://github.com/isaac-sim/IsaacLab-Arena/issues) · [Discussions](https://github.com/isaac-sim/IsaacLab-Arena/discussions)
+[Documentation](https://isaac-sim.github.io/IsaacLab-Arena/release/0.2.0/index.html) · [NVIDIA Blog Post](https://developer.nvidia.com/blog/simplify-generalist-robot-policy-evaluation-in-simulation-with-nvidia-isaac-lab-arena/) · [Report a Bug](https://github.com/isaac-sim/IsaacLab-Arena/issues) · [Discussions](https://github.com/isaac-sim/IsaacLab-Arena/discussions)
 
 </div>
 
@@ -190,6 +190,7 @@ Isaac Lab-Arena is part of a growing ecosystem of tools and benchmarks. NVIDIA a
 - **[Lightwheel LIBERO Tasks](https://github.com/LightwheelAI/LW-BenchHub)** — Adapted LIBERO benchmarks.
 - **[RoboTwin 2.0](https://github.com/RoboTwin-Platform/RoboTwin/tree/IsaacLab-Arena)** — Extended simulation benchmarks using Arena; [Arxiv](https://arxiv.org/abs/2603.01229).
 - **[LeRobot Environment Hub](https://huggingface.co/blog/nvidia/generalist-robotpolicy-eval-isaaclab-arena-lerobot)** — Share and discover Arena environments on Hugging Face.
+- **[Isaac for Healthcare RHEO Workflows](https://github.com/isaac-for-healthcare/i4h-workflows/tree/main/workflows/rheo)** — Healthcare robotics benchmark workflows.
 
 NIST Board 1, NVIDIA Isaac GR00T Industrial Benchmarks, NVIDIA DexBench, NVIDIA RoboLab, and more benchmarks are coming soon.
 
@@ -247,6 +248,8 @@ If you use Isaac Lab (the underlying framework), please also cite the [Isaac Lab
 ## Acknowledgements
 
 Isaac Lab-Arena builds on [NVIDIA Isaac Lab](https://github.com/isaac-sim/IsaacLab), with the evaluation and task layers designed in close collaboration with Lightwheel. We thank the Isaac Lab team and the broader robotics community for their foundational work.
+
+Isaac Lab-Arena was built in collaboration with the authors of Robolab ([website](https://research.nvidia.com/labs/srl/projects/robolab/), [paper](https://arxiv.org/abs/2604.09860)).
 
 ---
 
