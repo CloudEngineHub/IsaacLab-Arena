@@ -303,19 +303,23 @@ def _positions_by_name(result: PlacementResult) -> dict[str, tuple[float, float,
     return {obj.name: pos for obj, pos in result.positions.items()}
 
 
-def test_pooled_placer_sample_without_replacement_same_seed_produces_identical_sequences():
-    """Two pools with the same seed must return identical sample_without_replacement sequences."""
+def test_pooled_placer_builds_identical_layouts_for_same_seed_and_objects():
+    """Same objects + same placement_seed must produce bit-identical optimized layouts.
+
+    Draining the pool via ``sample_without_replacement`` walks ``_layouts`` in order with
+    no RNG involvement, so this compares the solver output directly across the two pools.
+    """
     solver_params = RelationSolverParams(max_iters=50)
     placer_params = ObjectPlacerParams(placement_seed=42, solver_params=solver_params, apply_positions_to_objects=False)
 
     pool1 = PooledObjectPlacer(objects=list(_create_test_objects()), placer_params=placer_params, pool_size=4)
     pool2 = PooledObjectPlacer(objects=list(_create_test_objects()), placer_params=placer_params, pool_size=4)
 
-    draws1 = [pool1.sample_without_replacement(1)[0] for _ in range(4)]
-    draws2 = [pool2.sample_without_replacement(1)[0] for _ in range(4)]
+    layouts1 = pool1.sample_without_replacement(4)
+    layouts2 = pool2.sample_without_replacement(4)
 
-    for d1, d2 in zip(draws1, draws2):
-        assert _positions_by_name(d1) == _positions_by_name(d2)
+    for L1, L2 in zip(layouts1, layouts2):
+        assert _positions_by_name(L1) == _positions_by_name(L2)
 
 
 def test_pooled_placer_continues_seed_stream_across_refill():
