@@ -13,12 +13,20 @@ from isaaclab_arena.tests.utils.subprocess import run_simulation_app_function
 
 NUM_STEPS = 10
 WARMUP_STEPS = 50
+# Steps allowed for the once-teleported apple to fall + settle into stable contact with
+# the plate (force > force_threshold AND velocity < velocity_threshold). Same tuning
+# rationale as the static-variant test: a small drop takes a few env steps, then PhysX
+# needs a handful of contact-resolution steps for the apple to come to rest.
+APPLE_SETTLE_STEPS = 50
 HEADLESS = True
 ENABLE_CAMERAS = True
 
 APPLE_INITIAL_POSITION_M = (0.15, 0.15, 0.05)
 PLATE_INITIAL_POSITION_M = (0.15, -0.40, 0.02)
-APPLE_ABOVE_PLATE_OFFSET_M = 0.05
+# Drop height for the success-case teleport. Kept small so the apple has a short,
+# contained fall onto the plate -- larger offsets risk the apple bouncing off a thin
+# plate edge before settling into stable contact.
+APPLE_ABOVE_PLATE_OFFSET_M = 0.02
 
 
 def get_test_environment(num_envs: int):
@@ -26,8 +34,8 @@ def get_test_environment(num_envs: int):
 
     Uses a plain table background (instead of the full ``galileo_locomanip`` scene) to isolate
     task termination logic from the production environment while still exercising the
-    ``LocomanipPickAndPlaceTask`` + G1 WBC locomotion embodiment stack used by
-    ``galileo_g1_locomanip_pick_and_place``.
+    ``G1PickAndPlaceMimicEnvCfg`` injected via ``mimic_env_cfg_factory`` + G1 WBC
+    locomotion embodiment stack used by ``galileo_g1_locomanip_pick_and_place``.
     """
 
     from isaaclab_arena.assets.registries import AssetRegistry
@@ -36,7 +44,7 @@ def get_test_environment(num_envs: int):
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.scene.scene import Scene
-    from isaaclab_arena.tasks.locomanip_pick_and_place_task import LocomanipPickAndPlaceTask
+    from isaaclab_arena.tasks.pick_and_place_task import G1PickAndPlaceMimicEnvCfg, PickAndPlaceTask
     from isaaclab_arena.utils.pose import Pose
 
     asset_registry = AssetRegistry()
@@ -50,13 +58,21 @@ def get_test_environment(num_envs: int):
     embodiment = G1WBCJointEmbodiment(enable_cameras=ENABLE_CAMERAS)
     embodiment.set_initial_pose(Pose(position_xyz=(-0.4, 0.0, 0.0), rotation_xyzw=(0.0, 0.0, 0.0, 1.0)))
 
+    def _build_g1_pick_and_place_mimic_cfg(arm_mode):
+        return G1PickAndPlaceMimicEnvCfg(
+            pick_up_object_name=apple.name,
+            destination_location_name=plate.name,
+            arm_mode=arm_mode,
+        )
+
     scene = Scene(assets=[background, apple, plate])
-    task = LocomanipPickAndPlaceTask(
+    task = PickAndPlaceTask(
         pick_up_object=apple,
         destination_location=plate,
         background_scene=background,
         episode_length_s=30.0,
         task_description="Pick up the apple from the table and place it onto the plate.",
+        mimic_env_cfg_factory=_build_g1_pick_and_place_mimic_cfg,
     )
 
     isaaclab_arena_environment = IsaacLabArenaEnvironment(
@@ -79,12 +95,17 @@ def _step_with_standing_actions(env, num_steps: int) -> list[bool]:
     terminated_list = []
     for _ in range(num_steps):
         with torch.inference_mode():
-            actions = torch.zeros(env.action_space.shape, device=env.unwrapped.device)
+            actions = _zero_actions(env)
             # NOTE: Set base height to 0.75m to avoid robot squatting to match 0-height command.
             actions[:, -4] = 0.75
             _, _, terminated, _, _ = env.step(actions)
             terminated_list.append(terminated.item())
     return terminated_list
+
+
+def _zero_actions(env) -> torch.Tensor:
+    """Return a ``(num_envs, action_dim)``-shaped zero action tensor on the env's device."""
+    return torch.zeros((env.unwrapped.num_envs,) + env.unwrapped.single_action_space.shape, device=env.unwrapped.device)
 
 
 def _teleport_apple(env, apple, position_xyz: tuple[float, float, float]) -> None:
@@ -129,7 +150,14 @@ def _test_initial_state_not_terminated(simulation_app) -> bool:
 
 
 def _test_apple_on_plate_succeeds(simulation_app) -> bool:
-    """Re-teleporting the apple above the plate should trigger success termination."""
+    """Teleporting the apple just above the plate once should trigger success as it settles.
+
+    Single-teleport + settle pattern: the apple falls a small distance under gravity,
+    rests on the plate, and the contact force + low velocity reliably trigger the
+    termination within ``APPLE_SETTLE_STEPS``. (An earlier "re-teleport every step"
+    pattern was flaky -- it kept the apple's velocity above the velocity threshold and
+    relied on a coincidental low-velocity moment during the post-teleport bounce.)
+    """
 
     from isaaclab.assets import RigidObject
 
@@ -141,28 +169,25 @@ def _test_apple_on_plate_succeeds(simulation_app) -> bool:
         plate_object: RigidObject = env.unwrapped.scene[plate.name]
         plate_pos_world = wp.to_torch(plate_object.data.root_pos_w)[0]
         env_origin = env.unwrapped.scene.env_origins[0]
-        plate_pos_local = plate_pos_world - env_origin
+        plate_pos_local = plate_pos_world.to(env_origin.device) - env_origin
         apple_target = (
             float(plate_pos_local[0]),
             float(plate_pos_local[1]),
             float(plate_pos_local[2]) + APPLE_ABOVE_PLATE_OFFSET_M,
         )
 
-        terminated_ever = False
-        for _ in range(NUM_STEPS * 10):
-            # Re-teleport each step so short physics drifts (bouncing off a thin plate edge)
-            # cannot push the apple outside the proximity threshold before termination fires.
-            _teleport_apple(env, apple, apple_target)
-            with torch.inference_mode():
-                actions = torch.zeros(env.action_space.shape, device=env.unwrapped.device)
-                actions[:, -4] = 0.75
-                _, _, terminated, _, _ = env.step(actions)
-            if terminated.item():
-                terminated_ever = True
-                break
+        # One-shot teleport: drop the apple above the plate, then run physics until it
+        # settles into stable contact (or we hit APPLE_SETTLE_STEPS).
+        _teleport_apple(env, apple, apple_target)
 
-        assert terminated_ever, "Task should terminate after apple is placed on plate"
-        print("Success: apple-on-plate termination detected")
+        terminated_list = _step_with_standing_actions(env, APPLE_SETTLE_STEPS)
+        terminated_ever = any(terminated_list)
+
+        assert terminated_ever, (
+            "Task should terminate after apple is placed on plate; got terminated_list="
+            f"{terminated_list[:10]}... (showing first 10 of {len(terminated_list)})"
+        )
+        print(f"Success: apple-on-plate termination detected (fired at step {terminated_list.index(True)})")
 
     except Exception as e:
         print(f"Error: {e}")
@@ -185,7 +210,7 @@ def _test_mimic_cfg_uses_object_and_destination_names(simulation_app) -> bool:
 
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-    from isaaclab_arena.tasks.locomanip_pick_and_place_task import LocomanipPickAndPlaceTask
+    from isaaclab_arena.tasks.pick_and_place_task import G1PickAndPlaceMimicEnvCfg, PickAndPlaceTask
     from isaaclab_arena.utils.pose import Pose
 
     asset_registry = AssetRegistry()
@@ -196,10 +221,18 @@ def _test_mimic_cfg_uses_object_and_destination_names(simulation_app) -> bool:
     apple.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
     plate.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
 
-    task = LocomanipPickAndPlaceTask(
+    def _build_g1_pick_and_place_mimic_cfg(arm_mode):
+        return G1PickAndPlaceMimicEnvCfg(
+            pick_up_object_name=apple.name,
+            destination_location_name=plate.name,
+            arm_mode=arm_mode,
+        )
+
+    task = PickAndPlaceTask(
         pick_up_object=apple,
         destination_location=plate,
         background_scene=background,
+        mimic_env_cfg_factory=_build_g1_pick_and_place_mimic_cfg,
     )
 
     mimic_cfg = task.get_mimic_env_cfg(arm_mode=ArmMode.DUAL_ARM)
@@ -209,8 +242,8 @@ def _test_mimic_cfg_uses_object_and_destination_names(simulation_app) -> bool:
     ), f"Expected pick_up_object_name='{apple.name}', got '{mimic_cfg.pick_up_object_name}'"
 
     assert (
-        mimic_cfg.destination_name == plate.name
-    ), f"Expected destination_name='{plate.name}', got '{mimic_cfg.destination_name}'"
+        mimic_cfg.destination_location_name == plate.name
+    ), f"Expected destination_location_name='{plate.name}', got '{mimic_cfg.destination_location_name}'"
 
     # Datagen name must include BOTH the object and the destination so Mimic runs for e.g.
     # apple+plate vs apple+bin don't collide on the same dataset key.
@@ -244,7 +277,7 @@ def _test_mimic_cfg_brown_box_preserves_legacy_datagen_name(simulation_app) -> b
 
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-    from isaaclab_arena.tasks.locomanip_pick_and_place_task import LocomanipPickAndPlaceTask
+    from isaaclab_arena.tasks.pick_and_place_task import G1PickAndPlaceMimicEnvCfg, PickAndPlaceTask
     from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena_environments.galileo_g1_locomanip_pick_and_place_environment import (
         _apply_legacy_datagen_name_override,
@@ -258,19 +291,27 @@ def _test_mimic_cfg_brown_box_preserves_legacy_datagen_name(simulation_app) -> b
     brown_box.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
     blue_bin.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
 
-    task = LocomanipPickAndPlaceTask(
+    def _build_g1_pick_and_place_mimic_cfg(arm_mode):
+        return G1PickAndPlaceMimicEnvCfg(
+            pick_up_object_name=brown_box.name,
+            destination_location_name=blue_bin.name,
+            arm_mode=arm_mode,
+        )
+
+    task = PickAndPlaceTask(
         pick_up_object=brown_box,
         destination_location=blue_bin,
         background_scene=background,
+        mimic_env_cfg_factory=_build_g1_pick_and_place_mimic_cfg,
     )
 
     mimic_cfg = task.get_mimic_env_cfg(arm_mode=ArmMode.DUAL_ARM)
 
-    # Sanity check: the task itself should always produce the per-pair templated name now. The
-    # legacy name is applied by the environment callback, not the task.
+    # Sanity check: the cfg itself should always produce the per-pair templated name now. The
+    # legacy name is applied by the environment callback, not the cfg.
     assert mimic_cfg.datagen_config.name != "locomanip_pick_and_place_D0", (
-        "LocomanipPickAndPlaceTask must not produce the legacy datagen name directly; that is the "
-        f"environment callback's job. Got '{mimic_cfg.datagen_config.name}'."
+        "G1PickAndPlaceMimicEnvCfg must not produce the legacy datagen name directly; "
+        f"that is the environment callback's job. Got '{mimic_cfg.datagen_config.name}'."
     )
 
     _apply_legacy_datagen_name_override(
@@ -299,7 +340,7 @@ def _test_mimic_cfg_brown_box_non_default_destination_is_not_legacy(simulation_a
 
     from isaaclab_arena.assets.registries import AssetRegistry
     from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-    from isaaclab_arena.tasks.locomanip_pick_and_place_task import LocomanipPickAndPlaceTask
+    from isaaclab_arena.tasks.pick_and_place_task import G1PickAndPlaceMimicEnvCfg, PickAndPlaceTask
     from isaaclab_arena.utils.pose import Pose
     from isaaclab_arena_environments.galileo_g1_locomanip_pick_and_place_environment import (
         _apply_legacy_datagen_name_override,
@@ -313,10 +354,18 @@ def _test_mimic_cfg_brown_box_non_default_destination_is_not_legacy(simulation_a
     brown_box.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
     plate.set_initial_pose(Pose(position_xyz=(0.0, 0.0, 0.0)))
 
-    task = LocomanipPickAndPlaceTask(
+    def _build_g1_pick_and_place_mimic_cfg(arm_mode):
+        return G1PickAndPlaceMimicEnvCfg(
+            pick_up_object_name=brown_box.name,
+            destination_location_name=plate.name,
+            arm_mode=arm_mode,
+        )
+
+    task = PickAndPlaceTask(
         pick_up_object=brown_box,
         destination_location=plate,
         background_scene=background,
+        mimic_env_cfg_factory=_build_g1_pick_and_place_mimic_cfg,
     )
 
     mimic_cfg = task.get_mimic_env_cfg(arm_mode=ArmMode.DUAL_ARM)

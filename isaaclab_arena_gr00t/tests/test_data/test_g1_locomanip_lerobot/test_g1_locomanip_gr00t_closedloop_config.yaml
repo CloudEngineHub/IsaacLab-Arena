@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# This file shows how to configure the Gr00tClosedloopPolicy class for G1 locomanipulation task
+# This file shows how to configure the Gr00tRemoteClosedloopPolicy class for G1 locomanipulation task
 model_path: /checkpoints/gn1_5_g1_galileo_box_npnp/checkpoint-20000
 action_horizon: 50
 embodiment_tag: NEW_EMBODIMENT

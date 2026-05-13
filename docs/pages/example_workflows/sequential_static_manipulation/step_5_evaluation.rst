@@ -4,9 +4,9 @@ Closed-Loop Policy Inference and Evaluation
 This workflow demonstrates running the trained GR00T N1.6 policy in closed-loop
 and evaluating it in the GR1 Sequential Pick & Place and Close Door Environment.
 
-**Docker Container**: Base + GR00T (see :doc:`../imitation_learning/index` for more details)
+**Docker Container**: Base (see :doc:`../../quickstart/installation` for more details)
 
-:docker_run_gr00t:
+:docker_run_default:
 
 Once inside the container, set the dataset and models directories.
 
@@ -70,14 +70,40 @@ The GR00T model is configured by a config file at ``isaaclab_arena_gr00t/policy/
       target_image_size: [512, 512, 3]
 
 
+**Prerequisite: launch the GR00T policy server**
+
+The Arena evaluation client runs in the Base container and connects to a GR00T policy server.
+The server runs out of
+the `Isaac-GR00T <https://github.com/NVIDIA/Isaac-GR00T/tree/e29d8fc50b0e4745120ae3fb72447986fe638aa6>`_
+submodule pinned at commit ``e29d8fc``; populate it with
+``git submodule update --init submodules/Isaac-GR00T`` if it is not already
+checked out. Then, in a separate shell with ``uv`` available from the repo root:
+
+.. todo::
+
+   The ``submodules/Isaac-GR00T`` submodule will be removed after the policy
+   config refactor. After that, users will be expected to set up a separate
+   GR00T repository checkout themselves and launch the server from there.
+
+.. code-block:: bash
+
+   cd submodules/Isaac-GR00T
+   uv run python gr00t/eval/run_gr00t_server.py \
+     --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_arms_only_data_config.py \
+     --model-path /models/isaaclab_arena/sequential_static_manipulation_tutorial/checkpoint-20000 \
+     --embodiment-tag GR1 \
+     --device cuda --host 127.0.0.1 --port 5555
+
 Test the policy in a single environment with visualization via the GUI run:
 
 .. code-block:: bash
 
    python isaaclab_arena/evaluation/policy_runner.py \
      --viz kit \
-     --policy_type isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy \
+     --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
      --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_manip_ranch_bottle_gr00t_closedloop_config.yaml \
+     --remote_host 127.0.0.1 \
+     --remote_port 5555 \
      --num_steps 2000 \
      --enable_cameras \
      put_item_in_fridge_and_close_door \
@@ -123,8 +149,10 @@ Parallel evaluation of the policy in multiple parallel environments is also supp
       .. code-block:: bash
 
          python isaaclab_arena/evaluation/policy_runner.py \
-           --policy_type isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy \
+           --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
            --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_manip_ranch_bottle_gr00t_closedloop_config.yaml \
+           --remote_host 127.0.0.1 \
+           --remote_port 5555 \
            --num_steps 2000 \
            --num_envs 10 \
            --enable_cameras \
@@ -139,8 +167,10 @@ Parallel evaluation of the policy in multiple parallel environments is also supp
       .. code-block:: bash
 
          python -m torch.distributed.run --nnode=1 --nproc_per_node=2 isaaclab_arena/evaluation/policy_runner.py \
-           --policy_type isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy \
+           --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
            --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_manip_ranch_bottle_gr00t_closedloop_config.yaml \
+           --remote_host 127.0.0.1 \
+           --remote_port 5555 \
            --num_steps 2000 \
            --num_envs 10 \
            --enable_cameras \
@@ -194,8 +224,10 @@ This step demonstrates evaluation of the policy in heterogeneous environments wi
 
          python isaaclab_arena/evaluation/policy_runner.py \
          --viz kit \
-         --policy_type isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy \
+         --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
          --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_manip_ranch_bottle_gr00t_closedloop_config.yaml \
+         --remote_host 127.0.0.1 \
+         --remote_port 5555 \
          --num_steps 2000 \
          --num_envs 10 \
          --enable_cameras \
@@ -210,8 +242,10 @@ This step demonstrates evaluation of the policy in heterogeneous environments wi
       .. code-block:: bash
 
          python -m torch.distributed.run --nnode=1 --nproc_per_node=2 isaaclab_arena/evaluation/policy_runner.py \
-           --policy_type isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy \
+           --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
            --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_manip_ranch_bottle_gr00t_closedloop_config.yaml \
+           --remote_host 127.0.0.1 \
+           --remote_port 5555 \
            --num_steps 2000 \
            --num_envs 10 \
            --enable_cameras \
@@ -261,10 +295,12 @@ The evaluation batch can be specified in a config file, with examples shown belo
                "embodiment": "gr1_joint"
             },
             "num_steps": 500,
-            "policy_type": "isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy",
+            "policy_type": "isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy",
             "policy_config_dict": {
             "policy_config_yaml_path": "isaaclab_arena_gr00t/policy/config/gr1_manip_ranch_bottle_gr00t_closedloop_config.yaml",
-            "policy_device": "cuda:0"
+            "policy_device": "cuda:0",
+            "remote_host": "127.0.0.1",
+            "remote_port": 5555
             }
          },
          {
@@ -277,10 +313,12 @@ The evaluation batch can be specified in a config file, with examples shown belo
                "embodiment": "gr1_joint"
             },
             "num_steps": 500,
-            "policy_type": "isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy",
+            "policy_type": "isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy",
             "policy_config_dict": {
             "policy_config_yaml_path": "isaaclab_arena_gr00t/policy/config/gr1_manip_ranch_bottle_gr00t_closedloop_config.yaml",
-            "policy_device": "cuda:0"
+            "policy_device": "cuda:0",
+            "remote_host": "127.0.0.1",
+            "remote_port": 5555
             }
          }
       ]
@@ -302,8 +340,8 @@ You should see the following output on the console indicating the jobs and metri
    +---------------------------------------------------------+------------+----------------------------------------------------------------------------+----------+-----------+--------------+
    | Job Name                                                | Status     | Policy Type                                                                | Num Envs | Num Steps | Num Episodes |
    +---------------------------------------------------------+------------+----------------------------------------------------------------------------+----------+-----------+--------------+
-   || gr1_put_jug_in_fridge_and_close_door                   || completed || isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy || 10      || 500      || None        |
-   || gr1_put_ranch_dressing_bottle_in_fridge_and_close_door || completed || isaaclab_arena_gr00t.policy.gr00t_closedloop_policy.Gr00tClosedloopPolicy || 10      || 500      || None        |
+   || gr1_put_jug_in_fridge_and_close_door                   || completed || isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy || 10      || 500      || None        |
+   || gr1_put_ranch_dressing_bottle_in_fridge_and_close_door || completed || isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy || 10      || 500      || None        |
    +---------------------------------------------------------+------------+----------------------------------------------------------------------------+----------+-----------+--------------+
 
    ======================================================================

@@ -32,3 +32,26 @@ def add_policy_runner_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Language instruction for the policy. Takes precedence over the task's own description.",
     )
+    parser.add_argument(
+        "--video",
+        action="store_true",
+        default=False,
+        help="Record an mp4 video of the rollout (uses gymnasium.wrappers.RecordVideo).",
+    )
+    parser.add_argument(
+        "--video_dir",
+        "--video-dir",
+        type=str,
+        default="/eval/videos",
+        help="Output directory for recorded videos. Created if missing. Used with --video and/or --camera_video.",
+    )
+    parser.add_argument(
+        "--camera_video",
+        "--camera-video",
+        action="store_true",
+        default=False,
+        help=(
+            "Record one mp4 per camera in obs['camera_obs'] (what the policy actually sees)."
+            " Independent of --video; use either or both."
+        ),
+    )
