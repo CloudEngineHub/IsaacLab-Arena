@@ -23,7 +23,6 @@ from isaaclab_arena.tasks.common.mimic_default_params import MIMIC_DATAGEN_CONFI
 from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.terminations import object_on_destination
 from isaaclab_arena.utils.cameras import get_viewer_cfg_look_at_object
-from isaaclab_arena_g1.g1_env.mdp.recorders.g1_locomanip_recorder_cfg import G1LocomanipRecorderManagerCfg
 
 
 class PickAndPlaceTask(TaskBase):
@@ -275,6 +274,8 @@ class G1PickAndPlaceMimicEnvCfg(MimicEnvCfg):
     arm_mode: ArmMode = ArmMode.DUAL_ARM
 
     def __post_init__(self):
+        from isaaclab_arena_g1.g1_env.mdp.recorders.g1_locomanip_recorder_cfg import G1LocomanipRecorderManagerCfg
+
         # post init of parents
         super().__post_init__()
 
