@@ -50,7 +50,7 @@ SHELF_AIRGAP = 0.005
 # plate's 30 cm footprint clears the apple without collision. Earlier we tried Y=0.30
 # for the apple but a smoke test showed it rolls off the shelf edge from there.
 PICK_UP_OBJECT_SPAWN_XY = (0.5785, 0.18)
-DESTINATION_SPAWN_XY = (0.5785, -0.06)
+DESTINATION_SPAWN_XY = (0.6, -0.06)
 
 # Half-range of the apple's per-episode XY randomization at reset, in metres. Mirrors
 # the locomanip env's ``XY_RANGE_M = 0.025`` but tightened to 0.020 because the static
