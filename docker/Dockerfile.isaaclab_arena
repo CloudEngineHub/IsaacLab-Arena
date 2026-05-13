@@ -125,7 +125,7 @@ RUN /isaac-sim/python.sh -m pip install av
 # container. Pin to the commit your openpi server runs at so client and
 # server speak the same wire format. --no-deps because numpy / msgpack /
 # websockets / typing_extensions are already in the base image.
-ARG OPENPI_COMMIT=main
+ARG OPENPI_COMMIT=c23745b5ad24e98f66967ea795a07b2588ed6c79
 RUN /isaac-sim/python.sh -m pip install --no-cache-dir --no-deps \
     "openpi-client @ git+https://github.com/Physical-Intelligence/openpi@${OPENPI_COMMIT}#subdirectory=packages/openpi-client"
 
