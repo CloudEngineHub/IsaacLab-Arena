@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from dataclasses import MISSING
 from functools import partial
+from typing import Any
 
 from isaaclab.envs.mimic_env_cfg import MimicEnvCfg, SubTaskConfig
 from isaaclab.managers import EventTermCfg, TerminationTermCfg
@@ -107,7 +108,7 @@ class CompositeTaskBase(TaskBase):
         desired_subtask_success_state: list[bool] | None = None,
     ):
         super().__init__(episode_length_s)
-        assert len(subtasks) > 0, "CompositeTaskBase requires at least one subtask"
+        assert len(subtasks) > 0, "Composite task requires at least one subtask"
         self.subtasks = subtasks
 
         if desired_subtask_success_state is not None:
@@ -179,7 +180,7 @@ class CompositeTaskBase(TaskBase):
             for env_id in env_ids:
                 env._subtask_success_state[env_id] = [False for _ in subtasks]
 
-    def get_scene_cfg(self) -> configclass:
+    def get_scene_cfg(self) -> Any:
         "Make combined scene cfg from all subtasks."
         # Check for duplicate fields across subtask scene configs and warn if found
         duplicates = check_configclass_field_duplicates(*(subtask.get_scene_cfg() for subtask in self.subtasks))
@@ -195,7 +196,7 @@ class CompositeTaskBase(TaskBase):
         scene_cfg = combine_configclass_instances("SceneCfg", *(subtask.get_scene_cfg() for subtask in self.subtasks))
         return scene_cfg
 
-    def make_composite_task_events_cfg(self) -> configclass:
+    def make_composite_task_events_cfg(self) -> Any:
         "Make event to reset subtask success state."
         reset_subtask_success_state = EventTermCfg(
             func=self.reset_subtask_success_state,
@@ -209,7 +210,7 @@ class CompositeTaskBase(TaskBase):
             reset_subtask_success_state=reset_subtask_success_state,
         )
 
-    def get_events_cfg(self) -> configclass:
+    def get_events_cfg(self) -> Any:
         "Make combined events cfg from all subtasks."
         # Collect events_cfgs from subtasks with renamed fields to avoid collisions
         renamed_events_cfgs = []
@@ -228,7 +229,7 @@ class CompositeTaskBase(TaskBase):
 
         return events_cfg
 
-    def make_composite_task_termination_cfg(self) -> configclass:
+    def make_composite_task_termination_cfg(self) -> Any:
         "Make composite success check termination term."
         success = TerminationTermCfg(
             func=self.composite_task_success_func,
@@ -242,7 +243,7 @@ class CompositeTaskBase(TaskBase):
             success=success,
         )
 
-    def get_termination_cfg(self) -> configclass:
+    def get_termination_cfg(self) -> Any:
         "Make combined termination cfg from all subtasks."
         # Collect termination cfgs from subtasks with 'success' field removed
         subtask_termination_cfgs = []
