@@ -112,7 +112,6 @@ class ObjectRelationSolver:
 
     def validate_object_placement_pool(self, object_placement_pool: PooledObjectPlacer) -> None:
         """Hook for subclasses that need to validate or wrap the solved object layout pool."""
-        return None
 
     def validate_layout(self, layout: PlacementResult) -> None:
         """Validate one object-relation placement result."""
@@ -159,7 +158,6 @@ class RobotRelationSolver:
         if robot_result.embodiment is not None and not self._warned_base_validation_skip:
             print("Robot relation validation is not implemented; skipping IK validation.")
             self._warned_base_validation_skip = True
-        return None
 
     def check_IK_reachable(self, objects: list[ObjectBase], embodiment: EmbodimentBase) -> bool:
         """Return whether scene objects are IK-reachable for the embodiment.
