@@ -9,14 +9,26 @@ Child classes define the task-specific entry script, inputs, image, and credenti
 assembles the dict that OSMO consumes under ``workflow.groups[*].tasks``.
 """
 
+import argparse
 from abc import ABC, abstractmethod
 from typing import Any
 
-from arena_osmo.yaml_utils import block_literal_str
+from workflows.utils.workflow_types import WorkflowType
+from workflows.utils.yaml_utils import block_literal_str
 
 
 class BaseTask(ABC):
     """Abstract base task for an Isaac Lab Arena OSMO workflow."""
+
+    def __init__(
+        self,
+        workflow_type: WorkflowType,
+        workflow_args: argparse.Namespace,
+        task_args: argparse.Namespace,
+    ) -> None:
+        self.workflow_type = workflow_type
+        self.workflow_args = workflow_args
+        self.task_args = task_args
 
     def create_task_dict(self) -> dict[str, Any]:
         """Assemble the task dict consumed by OSMO."""

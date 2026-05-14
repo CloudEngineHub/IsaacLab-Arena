@@ -5,10 +5,9 @@
 
 """Workflow class for Isaac Lab Arena OSMO workflows.
 
-Modeled after ``mindmap_osmo.workflow_utils.workflow.Workflow``. Wraps a list
-of ``BaseTask`` into an OSMO workflow dict using Arena's ``version: 2`` schema
-(``workflow.groups[*].tasks`` with workflow-level ``resources.default`` and
-``timeout`` blocks).
+Modeled after ``mindmap_osmo.workflow_utils.workflow.Workflow``. Wraps task
+classes and task arguments into an OSMO workflow dict using Arena's
+``version: 2`` schema.
 """
 
 from __future__ import annotations
@@ -21,8 +20,9 @@ from typing import Any
 
 import yaml
 
-from arena_osmo.base_task import BaseTask
-from arena_osmo.yaml_utils import block_literal_str  # noqa: F401  (registers representer)
+from tasks.base_task import BaseTask
+from workflows.utils.workflow_types import WorkflowType
+from workflows.utils.yaml_utils import block_literal_str  # noqa: F401  (registers representer)
 
 
 class Workflow:
@@ -30,14 +30,23 @@ class Workflow:
 
     def __init__(
         self,
+        workflow_type: WorkflowType,
         workflow_args: argparse.Namespace,
-        tasks: list[BaseTask],
+        task_cls_list: list[type[BaseTask]],
+        task_args_list: list[argparse.Namespace],
         group_name: str = "arena",
     ) -> None:
-        assert len(tasks) > 0, "Workflow requires at least one task"
+        assert len(task_cls_list) > 0, "Workflow requires at least one task"
+        assert len(task_cls_list) == len(task_args_list), "Each task requires one task args object"
+        self.workflow_type = workflow_type
         self.workflow_args = workflow_args
-        self.tasks = tasks
+        self.task_cls_list = task_cls_list
+        self.task_args_list = task_args_list
         self.group_name = group_name
+
+    def generate_workflow(self) -> dict[str, Any]:
+        """Create and return the workflow dictionary."""
+        return self.create_workflow_dict()
 
     def create_workflow_dict(self) -> dict[str, Any]:
         """Build the full OSMO workflow dict."""
@@ -48,7 +57,7 @@ class Workflow:
                 "groups": [
                     {
                         "name": self.group_name,
-                        "tasks": [t.create_task_dict() for t in self.tasks],
+                        "tasks": [task.create_task_dict() for task in self._get_tasks()],
                     }
                 ],
                 "resources": {"default": self._create_resource_dict()},
@@ -62,15 +71,41 @@ class Workflow:
     def render_yaml(self) -> str:
         """Render the workflow dict to YAML text."""
         return yaml.dump(
-            self.create_workflow_dict(),
+            self.generate_workflow(),
             default_flow_style=False,
             sort_keys=False,
             default_style="",
         )
 
-    def submit(self, pool: str | None = None, priority: str | None = None) -> int:
-        """Write the rendered YAML to a temp file and invoke ``osmo workflow submit``."""
+    def submit_workflow(
+        self,
+        dry_run: bool = False,
+        pool: str | None = None,
+        priority: str | None = None,
+    ) -> int:
+        """Render the workflow and either print it or submit it to OSMO."""
         rendered = self.render_yaml()
+        if dry_run:
+            print("[dry-run] Rendered workflow YAML:\n")
+            print(rendered)
+            return 0
+
+        return self._submit_rendered_workflow(rendered=rendered, pool=pool, priority=priority)
+
+    def _get_tasks(self) -> list[BaseTask]:
+        """Instantiate task objects for this workflow."""
+        tasks = []
+        for task_cls, task_args in zip(self.task_cls_list, self.task_args_list):
+            assert issubclass(task_cls, BaseTask)
+            tasks.append(task_cls(self.workflow_type, self.workflow_args, task_args))
+        return tasks
+
+    def _submit_rendered_workflow(
+        self,
+        rendered: str,
+        pool: str | None = None,
+        priority: str | None = None,
+    ) -> int:
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".yaml", prefix="arena_", delete=False
         ) as f:
