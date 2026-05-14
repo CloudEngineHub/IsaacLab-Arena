@@ -38,9 +38,7 @@ class BaseTask(ABC):
             "credentials": self._get_credentials(),
             "downloadType": "download",
             "environment": self._get_environment(),
-            "files": [
-                {"path": "/tmp/entry.sh", "contents": block_literal_str(self._get_run_script())}
-            ],
+            "files": [{"path": "/tmp/entry.sh", "contents": block_literal_str(self._get_run_script())}],
             "image": self._get_image(),
             "inputs": self._get_inputs(),
             "lead": True,

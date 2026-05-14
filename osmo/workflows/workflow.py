@@ -15,10 +15,9 @@ from __future__ import annotations
 import argparse
 import subprocess
 import tempfile
+import yaml
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 from tasks.base_task import BaseTask
 from workflows.utils.workflow_types import WorkflowType
@@ -54,12 +53,10 @@ class Workflow:
             "version": 2,
             "workflow": {
                 "name": self.workflow_args.workflow_name,
-                "groups": [
-                    {
-                        "name": self.group_name,
-                        "tasks": [task.create_task_dict() for task in self._get_tasks()],
-                    }
-                ],
+                "groups": [{
+                    "name": self.group_name,
+                    "tasks": [task.create_task_dict() for task in self._get_tasks()],
+                }],
                 "resources": {"default": self._create_resource_dict()},
                 "timeout": {
                     "exec_timeout": self.workflow_args.exec_timeout,
@@ -106,9 +103,7 @@ class Workflow:
         pool: str | None = None,
         priority: str | None = None,
     ) -> int:
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", prefix="arena_", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", prefix="arena_", delete=False) as f:
             f.write(rendered)
             rendered_path = f.name
 

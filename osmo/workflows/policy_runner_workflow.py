@@ -10,8 +10,8 @@ from __future__ import annotations
 import argparse
 
 from tasks.policy_runner_task import PolicyRunnerTask
-from workflows.workflow import Workflow
 from workflows.utils.workflow_types import WorkflowType
+from workflows.workflow import Workflow
 
 
 class PolicyRunnerWorkflow(Workflow):
