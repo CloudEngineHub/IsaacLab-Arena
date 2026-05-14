@@ -32,3 +32,18 @@ def add_policy_runner_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Language instruction for the policy. Takes precedence over the task's own description.",
     )
+    parser.add_argument(
+        "--scene_graph_yaml",
+        type=str,
+        default=None,
+        help=(
+            "Path to a scene-graph YAML file. When set, policy_runner builds the Arena environment directly from "
+            "the YAML and does not require an example-environment subcommand."
+        ),
+    )
+    parser.add_argument(
+        "--scene_graph_env_name",
+        type=str,
+        default=None,
+        help="Optional Gym registration name override for --scene_graph_yaml environments.",
+    )

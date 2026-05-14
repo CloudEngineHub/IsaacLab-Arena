@@ -1,0 +1,55 @@
+name: Franka_PnP_Sweet_Potato_To_Bowl_scene_graph_0
+
+nodes:
+  - id: Franka
+    name: franka_ik
+    type: embodiment
+
+  - id: Sweet_Potato_1
+    name: sweet_potato
+    type: rigid_object
+
+  - id: Ranch_Dressing_1
+    name: ranch_dressing_hope_robolab
+    type: rigid_object
+
+  - id: Bowl
+    name: bowl_ycb_robolab
+    type: rigid_object
+
+  - id: Table
+    name: maple_table_robolab
+    type: background
+
+edges:
+  - id: edge_01
+    parent: Table
+    type: is_anchor
+
+  - id: edge_02
+    parent: Table
+    child: Sweet_Potato_1
+    type: "on"
+
+  - id: edge_03
+    parent: Table
+    child: Ranch_Dressing_1
+    type: "on"
+
+  - id: edge_04
+    parent: Franka
+    child: Sweet_Potato_1
+    type: reach
+
+  - id: edge_05
+    parent: Table
+    child: Bowl
+    type: "on"
+
+tasks:
+  - id: Subtask 1
+    name: pick_and_place
+    type: pick_and_place
+    task_args:
+      object: Sweet_Potato_1
+      destination: Bowl

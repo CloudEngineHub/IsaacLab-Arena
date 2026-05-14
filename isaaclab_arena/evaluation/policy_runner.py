@@ -19,6 +19,7 @@ from isaaclab_arena_environments.cli import get_arena_builder_from_cli, get_isaa
 from isaaclab_arena_gr00t.utils.groot_path import ensure_groot_deps_in_path
 
 if TYPE_CHECKING:
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from isaaclab_arena.policy.policy_base import PolicyBase
 
 
@@ -53,6 +54,16 @@ def is_distributed(args_cli: argparse.Namespace) -> bool:
     return (
         "cuda" in args_cli.device and hasattr(args_cli, "distributed") and args_cli.distributed and get_world_size() > 1
     )
+
+
+def get_arena_builder_from_scene_graph_cli(args_cli: argparse.Namespace) -> "ArenaEnvBuilder":
+    """Build an ArenaEnvBuilder directly from a scene-graph YAML file."""
+    from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
+    from isaaclab_arena.scene_graph import SceneGraphEnvSpec
+
+    spec = SceneGraphEnvSpec.from_cli(args_cli)
+    arena_env = spec.to_arena_env(args_cli=args_cli, name=args_cli.scene_graph_env_name or spec.name)
+    return ArenaEnvBuilder(arena_env, args_cli)
 
 
 def rollout_policy(
@@ -132,7 +143,9 @@ def rollout_policy(
 
 def main():
     """Run an IsaacLab Arena environment with a policy.
-    Use --distributed with torchrun command for one process per GPU on multi-GPU machines. AppLauncher uses LOCAL_RANK for device.
+
+    Use --distributed with torchrun for one process per GPU on multi-GPU
+    machines. AppLauncher uses LOCAL_RANK for device selection.
     """
     args_parser = get_isaaclab_arena_cli_parser()
     # We do this as the parser is shared between the example environment and policy runner
@@ -158,17 +171,27 @@ def main():
             f" {policy_cls}"
         )
 
-        # Add the example environment arguments + policy-related arguments to the parser
-        args_parser = get_isaaclab_arena_environments_cli_parser(args_parser)
-        args_parser = policy_cls.add_args_to_parser(args_parser)
-        args_cli = args_parser.parse_args()
+        # Add environment + policy-related arguments to the parser.
+        if args_cli.scene_graph_yaml is not None:
+            from isaaclab_arena.scene_graph import SceneGraphEnvSpec
+
+            args_parser = SceneGraphEnvSpec.add_args_to_parser(args_parser)
+            args_parser = policy_cls.add_args_to_parser(args_parser)
+            args_cli = args_parser.parse_args()
+        else:
+            args_parser = get_isaaclab_arena_environments_cli_parser(args_parser)
+            args_parser = policy_cls.add_args_to_parser(args_parser)
+            args_cli = args_parser.parse_args()
         # Re-apply per-rank device after parse preventing device got overwritten by the default value
         if is_distributed(args_cli):
             args_cli.distributed = True
             args_cli.device = f"cuda:{local_rank}"
 
         # Build scene
-        arena_builder = get_arena_builder_from_cli(args_cli)
+        if args_cli.scene_graph_yaml is not None:
+            arena_builder = get_arena_builder_from_scene_graph_cli(args_cli)
+        else:
+            arena_builder = get_arena_builder_from_cli(args_cli)
         env, cfg = arena_builder.make_registered_and_return_cfg()
 
         # Per-rank seed when distributed so each process has a different seed
