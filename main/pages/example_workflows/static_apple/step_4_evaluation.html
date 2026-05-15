@@ -523,11 +523,8 @@ Arena container. <code class="docutils literal notranslate"><span class="pre">Gr
 same machine).</p>
 <div class="admonition caution">
 <p class="admonition-title">Caution</p>
-<p>Before running, edit <code class="docutils literal notranslate"><span class="pre">model_path</span></code> in
-<code class="docutils literal notranslate"><span class="pre">isaaclab_arena_gr00t/policy/config/g1_static_apple_gr00t_closedloop_config.yaml</span></code> to point at
-the finetuned checkpoint directory you produced in <a class="reference internal" href="step_3_policy_training.html"><span class="doc">Policy Post-Training (GR00T N1.7)</span></a> (for example,
-<code class="docutils literal notranslate"><span class="pre">/models/isaaclab_arena/static_apple_tutorial/static_apple_n17_finetune/checkpoint-20000</span></code>).
-It must match the <code class="docutils literal notranslate"><span class="pre">--model-path</span></code> you passed to <code class="docutils literal notranslate"><span class="pre">run_gr00t_server.py</span></code> in Step 1.</p>
+<p>Before running, make sure the GR00T server from Step 1 was launched with the finetuned checkpoint
+directory you produced in <a class="reference internal" href="step_3_policy_training.html"><span class="doc">Policy Post-Training (GR00T N1.7)</span></a>.</p>
 </div>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>/isaac-sim/python.sh<span class="w"> </span>isaaclab_arena/evaluation/policy_runner.py<span class="w"> </span><span class="se">\</span>
 <span class="w">   </span>--viz<span class="w"> </span>kit<span class="w"> </span><span class="se">\</span>
