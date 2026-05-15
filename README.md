@@ -147,14 +147,14 @@ IsaacLab-Arena/
 ├── isaaclab_arena_environments/       # Concrete environment definitions
 ├── isaaclab_arena_examples/           # Policy and relation examples
 ├── isaaclab_arena_g1/                 # Unitree G1 humanoid embodiment + examples
-├── isaaclab_arena_gr00t/              # GR00T policy integration
+├── isaaclab_arena_gr00t/              # GR00T policy integration and CI Docker assets
 ├── docker/                            # Docker configurations and launch scripts
-├── docs/                      # Sphinx documentation source
-├── osmo/                      # Cloud deployment configs (OSMO)
-├── submodules/                # Git submodules (Isaac Lab, etc.)
-├── setup.py                   # Package installation
-├── CONTRIBUTING.md            # Contribution guidelines
-└── LICENSE.md                 # Apache 2.0 license
+├── docs/                              # Sphinx documentation source
+├── osmo/                              # Cloud deployment configs (OSMO)
+├── submodules/                        # Git submodules (Isaac Lab, etc.)
+├── setup.py                           # Package installation
+├── CONTRIBUTING.md                    # Contribution guidelines
+└── LICENSE.md                         # Apache 2.0 license
 ```
 
 ## Version Compatibility
