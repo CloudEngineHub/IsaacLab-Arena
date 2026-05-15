@@ -36,30 +36,9 @@ class ObjectRelationSolveResult:
 
 
 @dataclass
-class RobotRelationSolveResult:
-    """Result from solving robot/task relation constraints."""
-
-    embodiment: EmbodimentBase | None
-    """Embodiment used for robot/task-aware checks, if any."""
-
-
-@dataclass
-class RelationSolveResult:
-    """Combined relation solve results for scene objects and embodiment."""
-
-    object_result: ObjectRelationSolveResult
-    """Object-object relation solve result."""
-
-    robot_result: RobotRelationSolveResult
-    """Robot/task relation solve result."""
-
-
-@dataclass
 class PlacementSolution:
-    """Prepared placement artifacts and informational scene snapshot."""
+    """Prepared placement artifacts."""
 
-    objects: list[ObjectBase]
-    embodiment: EmbodimentBase | None
     placement_event_cfg: EventTermCfg | None = None
 
 
@@ -122,87 +101,29 @@ class ObjectRelationSolver:
         return layout.success
 
 
-class RobotRelationSolver:
-    """Embodiment-aware robot/task relation solving extension point.
-
-    The current implementation preserves existing object-only behavior. Future
-    robot solvers should subclass this and implement ``solve`` and
-    ``validate_layout`` using the embodiment and solved object layouts.
-    """
-
-    def __init__(self, embodiment: EmbodimentBase | None = None) -> None:
-        self.embodiment = embodiment
-        self._warned_base_validation_skip = False
-
-    def solve(
-        self,
-        objects: list[ObjectBase],
-        object_result: ObjectRelationSolveResult,
-    ) -> RobotRelationSolveResult:
-        """Prepare embodiment-specific solve state for robot-aware validation."""
-        # TODO: pass task-specific reachability context here once SceneGraph YAML
-        # carries grasp, dropoff, handle, and other task-dependent target poses.
-        return RobotRelationSolveResult(embodiment=self.embodiment)
-
-    def validate_layout(
-        self,
-        layout: PlacementResult,
-        objects: list[ObjectBase],
-        robot_result: RobotRelationSolveResult,
-    ) -> None:
-        """Validate robot constraints for one solved layout."""
-        if type(self) is not RobotRelationSolver and robot_result.embodiment is not None:
-            # Subclasses signal intent to validate robot constraints; require
-            # them to implement the hook instead of inheriting a silent pass.
-            raise NotImplementedError("Robot layout validation is unimplemented.")
-        if robot_result.embodiment is not None and not self._warned_base_validation_skip:
-            print("Robot relation validation is not implemented; skipping IK validation.")
-            self._warned_base_validation_skip = True
-
-    def check_IK_reachable(self, objects: list[ObjectBase], embodiment: EmbodimentBase) -> bool:
-        """Return whether scene objects are IK-reachable for the embodiment.
-
-        TODO: use the solved object poses from ``objects`` and the embodiment's
-        robot API to run the actual IK/reachability query.
-        """
-        raise NotImplementedError("IK reachability check is unimplemented.")
-
-
 class ValidatedPlacementPool:
     """Pooled placement adapter that validates every sampled layout.
 
     The reset event samples layouts after ``ArenaRelationSolver.prepare()``
-    returns, so the validation context (objects, solvers, and robot result) is
-    captured here instead of depending on later mutable solver state.
-    ``EventTermCfg`` deep-copies params during construction; ``__deepcopy__``
-    snapshots solver state while preserving object identity for validation.
+    returns, so the object validation context is captured here instead of
+    depending on later mutable solver state. ``EventTermCfg`` deep-copies
+    params during construction; ``__deepcopy__`` preserves that snapshot.
     """
 
     def __init__(
         self,
         placement_pool: PooledObjectPlacer,
-        objects: list[ObjectBase],
         object_solver: ObjectRelationSolver,
-        robot_solver: RobotRelationSolver,
-        robot_result: RobotRelationSolveResult,
     ) -> None:
         self._placement_pool = placement_pool
-        self._objects = list(objects)
         self._object_solver = object_solver
-        self._robot_solver = robot_solver
-        self._robot_result = robot_result
 
     def __deepcopy__(self, memo):
         copied_pool = deepcopy(self._placement_pool, memo)
         copied_object_solver = deepcopy(self._object_solver, memo)
-        copied_robot_solver = deepcopy(self._robot_solver, memo)
-        copied_robot_result = deepcopy(self._robot_result, memo)
         return type(self)(
             placement_pool=copied_pool,
-            objects=self._objects,
             object_solver=copied_object_solver,
-            robot_solver=copied_robot_solver,
-            robot_result=copied_robot_result,
         )
 
     def sample_without_replacement(self, count: int) -> list[PlacementResult]:
@@ -226,16 +147,14 @@ class ValidatedPlacementPool:
     def _validate_layouts(self, layouts: list[PlacementResult]) -> None:
         for layout in layouts:
             self._object_solver.validate_layout(layout)
-            self._robot_solver.validate_layout(layout, self._objects, self._robot_result)
 
 
 class ArenaRelationSolver:
     """Arena-facing relation placement orchestration.
 
     This class owns the Arena API boundary for scene objects, optional
-    embodiment context, reset events, and high-level relation placement calls.
-    Object and robot solvers provide their own solving and validation
-    independently.
+    embodiment context reserved for future robot-aware solving, reset events,
+    and high-level relation placement calls.
     """
 
     def __init__(
@@ -246,11 +165,9 @@ class ArenaRelationSolver:
         resolve_on_reset: bool | None = None,
         embodiment: EmbodimentBase | None = None,
         object_solver: ObjectRelationSolver | None = None,
-        robot_solver: RobotRelationSolver | None = None,
     ) -> None:
         self.num_envs = num_envs
         self.objects: list[ObjectBase] = []
-        self._robot_solver_supplied = robot_solver is not None
         if object_solver is not None:
             if object_solver.num_envs != num_envs:
                 raise ValueError("object_solver.num_envs must match ArenaRelationSolver.num_envs.")
@@ -258,83 +175,53 @@ class ArenaRelationSolver:
                 raise ValueError(
                     "placement_seed and resolve_on_reset are owned by object_solver when object_solver is provided."
                 )
-        robot_solver_embodiment = robot_solver.embodiment if robot_solver is not None else None
-        if embodiment is not None and robot_solver_embodiment is not None and embodiment is not robot_solver_embodiment:
-            raise ValueError("embodiment must match robot_solver.embodiment when both are provided.")
-        self.embodiment = embodiment if embodiment is not None else robot_solver_embodiment
+        self.embodiment = embodiment
         self.object_solver = object_solver or ObjectRelationSolver(
             num_envs=num_envs,
             placement_seed=placement_seed,
             resolve_on_reset=resolve_on_reset,
         )
-        self.robot_solver = robot_solver or RobotRelationSolver(embodiment=self.embodiment)
-        self._reconcile_robot_solver_embodiment()
-        self.robot_result: RobotRelationSolveResult | None = None
 
     def prepare(
         self,
         objects: list[ObjectBase],
         embodiment: EmbodimentBase | None = None,
     ) -> PlacementSolution | None:
-        """Solve scene-object and embodiment relations, then prepare Arena placement."""
-        self.robot_result = None
+        """Solve scene-object relations, then prepare Arena placement."""
         if not objects:
             print("No objects with relations found in scene. Skipping relation solving.")
             return None
         self.objects = list(objects)
         self._set_embodiment(embodiment)
 
-        relation_result = self.solve_relations()
+        object_result = self.solve_relations()
         anchor_objects_set = set(get_anchor_objects(self.objects))
         _validate_no_explicit_non_anchor_pose_events(self.objects, anchor_objects_set)
 
-        placement_event_cfg = self._apply_relation_result(relation_result, anchor_objects_set)
+        placement_event_cfg = self._apply_relation_result(object_result, anchor_objects_set)
 
-        return PlacementSolution(
-            objects=list(self.objects),
-            embodiment=self.embodiment,
-            placement_event_cfg=placement_event_cfg,
-        )
+        return PlacementSolution(placement_event_cfg=placement_event_cfg)
 
     def _set_embodiment(self, embodiment: EmbodimentBase | None) -> None:
-        """Update placement and robot-solver embodiment context for this prepare call."""
+        """Update placement embodiment context for this prepare call."""
         if embodiment is not None:
-            if (
-                self._robot_solver_supplied
-                and self.robot_solver.embodiment is not None
-                and self.robot_solver.embodiment is not embodiment
-            ):
-                raise ValueError("embodiment must match robot_solver.embodiment when both are provided.")
             self.embodiment = embodiment
-        self._reconcile_robot_solver_embodiment()
 
-    def _reconcile_robot_solver_embodiment(self) -> None:
-        if not self._robot_solver_supplied and self.robot_solver.embodiment is None:
-            self.robot_solver.embodiment = self.embodiment
-            return
-        if self.robot_solver.embodiment is not self.embodiment:
-            raise ValueError("embodiment must match robot_solver.embodiment when both are provided.")
-
-    def solve_relations(self) -> RelationSolveResult:
-        object_result = self.object_solver.solve(self.objects)
-        robot_result = self.robot_solver.solve(self.objects, object_result)
-        self.robot_result = robot_result
-        return RelationSolveResult(object_result=object_result, robot_result=robot_result)
+    def solve_relations(self) -> ObjectRelationSolveResult:
+        return self.object_solver.solve(self.objects)
 
     def _apply_relation_result(
         self,
-        relation_result: RelationSolveResult,
+        object_result: ObjectRelationSolveResult,
         anchor_objects_set: set[ObjectBase],
     ) -> EventTermCfg | None:
         """Apply solved relation state to Arena objects and reset events."""
-        object_result = relation_result.object_result
         placement_pool = ValidatedPlacementPool(
             placement_pool=object_result.object_placement_pool,
-            objects=self.objects,
             object_solver=self.object_solver,
-            robot_solver=self.robot_solver,
-            robot_result=relation_result.robot_result,
         )
+        if anchor_objects_set == set(self.objects):
+            return None
         if object_result.object_placer_params.resolve_on_reset:
             # Dynamic reset keeps the pool in the reset event so each reset can
             # draw a newly validated layout.
@@ -352,10 +239,7 @@ class ArenaRelationSolver:
         return None
 
     def validate_layout(self, layout: PlacementResult) -> None:
-        if self.robot_result is None:
-            raise RuntimeError("Robot relation solve result must be available before validation.")
         self.object_solver.validate_layout(layout)
-        self.robot_solver.validate_layout(layout, self.objects, self.robot_result)
 
     def _apply_dynamic_spawn_pose(
         self,

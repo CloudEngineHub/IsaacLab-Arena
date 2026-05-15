@@ -104,7 +104,7 @@ jobs:
       image: nvcr.io/nvstaging/isaac-amr/isaaclab_arena:latest
       credentials:
         username: $oauthtoken
-        password: ${{ env.NGC_API_KEY }}
+        password: ${{ secrets.ARENA_NGC_API_KEY }}
 
     steps:
       # nvidia-smi
