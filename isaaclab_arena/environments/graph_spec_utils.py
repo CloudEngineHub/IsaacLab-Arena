@@ -9,13 +9,17 @@ from numbers import Real
 from typing import TYPE_CHECKING, Any
 
 from isaaclab_arena.assets.registries import ObjectRelationLibraryRegistry
+from isaaclab_arena.environments.arena_env_graph_types import ArenaEnvGraphCliOverrideSpec
 
 if TYPE_CHECKING:
+    import argparse
+
     from isaaclab_arena.environments.arena_env_graph_spec import ArenaEnvGraphSpatialConstraintType
+    from isaaclab_arena.environments.arena_env_graph_types import ArenaEnvGraphNodeSpec
     from isaaclab_arena.relations.relations import RelationBase
 
 
-def as_dict(data: Any, spec_name: str) -> dict[str, Any]:
+def assert_dict(data: Any, spec_name: str) -> dict[str, Any]:
     """Require a YAML section to be a mapping before parsing it."""
     assert isinstance(data, dict), f"{spec_name} must be a dict, got {type(data).__name__}"
     return data
@@ -184,6 +188,45 @@ def assert_spatial_constraint_shapes(state_specs: list[Any]) -> None:
                 assert (
                     constraint.child is not None
                 ), f"Spatial constraint '{constraint.id}' of type '{constraint_type}' requires a child node"
+
+
+def assert_cli_override_specs_reference_nodes(
+    nodes: list["ArenaEnvGraphNodeSpec"], cli_override_specs: list[ArenaEnvGraphCliOverrideSpec]
+) -> None:
+    """Check each CLI override uses a unique flag and points to a real node."""
+    node_ids = {node.id for node in nodes}
+    seen_args: set[str] = set()
+    for override in cli_override_specs:
+        assert override.arg not in seen_args, f"Duplicate cli_override arg '--{override.arg}'"
+        seen_args.add(override.arg)
+        assert (
+            override.target_node_id in node_ids
+        ), f"CLI override '--{override.arg}' targets unknown node '{override.target_node_id}'"
+
+
+def add_cli_override_args(
+    parser: "argparse.ArgumentParser", override_specs: list[ArenaEnvGraphCliOverrideSpec]
+) -> None:
+    """Add each declared override to the CLI ``parser`` as a ``--flag``.
+
+    Each flag defaults to `None`, so an omitted flag falls back to the node's YAML-specified asset.
+
+    A declared flag that collides with one already on the parser (a built-in like ``--num_envs``
+    or ``--seed``, or any flag added by ``AppLauncher.add_app_launcher_args``) is rejected.
+    """
+    for override in override_specs:
+        flag = f"--{override.arg}"
+        # _option_string_actions maps every registered option string ('--num_envs') to its action
+        assert flag not in parser._option_string_actions, (  # noqa: SLF001 (introspect registered flags)
+            f"CLI override flag '{flag}' (node '{override.target_node_id}') is already a parser flag "
+            "(e.g. --num_envs/--seed or an AppLauncher flag); rename its 'arg' in the YAML."
+        )
+        parser.add_argument(
+            flag,
+            type=str,
+            default=None,
+            help=f"Override the asset behind graph node '{override.target_node_id}'.",
+        )
 
 
 def _add_id_location(id_locations: dict[str, list[str]], spec_id: str, location: str) -> None:

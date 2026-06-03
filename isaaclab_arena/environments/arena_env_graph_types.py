@@ -128,6 +128,22 @@ class ArenaEnvGraphStateSpec:
 
 
 @dataclass
+class ArenaEnvGraphCliOverrideSpec:
+    """One CLI flag that swaps a graph node's asset, declared in the graph YAML.
+
+    Lets one graph YAML serve many variants without editing it.
+    """
+
+    arg: str  # flag name without leading dashes; "object" -> --object
+    target_node_id: str  # whose `name` the flag overrides
+
+    @property
+    def dest(self) -> str:
+        """The argparse attribute name for this flag (dashes become underscores)."""
+        return self.arg.replace("-", "_")
+
+
+@dataclass
 class ArenaEnvGraphTaskSpec:
     """Task entry in an environment graph."""
 
