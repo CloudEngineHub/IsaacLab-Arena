@@ -55,6 +55,7 @@ tasks:
     episode_length_s: 20.0
 state_specs:
 - id: state_spec_0
+  is_delta: false
   spatial_constraints:
   - id: state_spec_0_maple_table_robolab_table_is_anchor
     kind: is_anchor
@@ -91,63 +92,17 @@ state_specs:
       x: 0.65
       y: 0.25
       z: 0.85
-  task_constraints:
-  - id: state_spec_0_droid_reach_rubiks_cube_hot3d_robolab
-    type: reach
-    parent: droid_abs_joint_pos
-    child: rubiks_cube_hot3d_robolab
 - id: state_spec_1
+  is_delta: true
   spatial_constraints:
-  - id: state_spec_1_maple_table_robolab_table_is_anchor
-    kind: is_anchor
-    subject: maple_table_robolab_table
-  - id: state_spec_1_bowl_ycb_robolab_on_maple_table_robolab_table
-    kind: 'on'
-    reference: maple_table_robolab_table
-    subject: bowl_ycb_robolab
-  - id: state_spec_1_bowl_ycb_robolab_position_limits
-    kind: position_limits
-    subject: bowl_ycb_robolab
-    params:
-      x_min: 0.55
-      x_max: 0.7
-      y_min: -0.4
-      y_max: -0.1
   - id: state_spec_1_rubiks_cube_hot3d_robolab_on_bowl_ycb_robolab
     kind: 'on'
     reference: bowl_ycb_robolab
     subject: rubiks_cube_hot3d_robolab
-  - id: state_spec_1_mug_ycb_robolab_at_position
-    kind: at_position
-    subject: mug_ycb_robolab
-    params:
-      x: 0.65
-      y: 0.25
-      z: 0.85
-  task_constraints:
-  - id: state_spec_1_droid_reach_mug_ycb_robolab
-    type: reach
-    parent: droid_abs_joint_pos
-    child: mug_ycb_robolab
 - id: state_spec_2
+  is_delta: true
   spatial_constraints:
-  - id: state_spec_2_maple_table_robolab_table_is_anchor
-    kind: is_anchor
-    subject: maple_table_robolab_table
-  - id: state_spec_2_bowl_ycb_robolab_on_maple_table_robolab_table
-    kind: 'on'
-    reference: maple_table_robolab_table
-    subject: bowl_ycb_robolab
-  - id: state_spec_2_rubiks_cube_hot3d_robolab_on_bowl_ycb_robolab
-    kind: 'on'
-    reference: bowl_ycb_robolab
-    subject: rubiks_cube_hot3d_robolab
   - id: state_spec_2_mug_ycb_robolab_on_bowl_ycb_robolab
     kind: 'on'
     reference: bowl_ycb_robolab
     subject: mug_ycb_robolab
-  task_constraints:
-  - id: state_spec_2_droid_reach_bowl_ycb_robolab
-    type: reach
-    parent: droid_abs_joint_pos
-    child: bowl_ycb_robolab

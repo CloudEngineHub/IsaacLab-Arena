@@ -29,7 +29,7 @@ def coerce_number_sequence(value: Any, length: int, field_name: str) -> tuple[fl
 
 
 def assert_unique_ids(nodes: list[Any], tasks: list[Any], state_specs: list[Any]) -> None:
-    """Ensure every graph id is unique, including constraint ids inside states."""
+    """Ensure every graph id is unique, including spatial constraint ids inside states."""
     id_locations: dict[str, list[str]] = {}
     for node in nodes:
         _add_id_location(id_locations, node.id, f"node '{node.id}'")
@@ -39,17 +39,14 @@ def assert_unique_ids(nodes: list[Any], tasks: list[Any], state_specs: list[Any]
         _add_id_location(id_locations, state_spec.id, f"state spec '{state_spec.id}'")
         for constraint in state_spec.spatial_constraints:
             _add_id_location(id_locations, constraint.id, f"spatial constraint '{constraint.id}'")
-        for constraint in state_spec.task_constraints:
-            _add_id_location(id_locations, constraint.id, f"task constraint '{constraint.id}'")
 
     duplicates = {spec_id: locations for spec_id, locations in id_locations.items() if len(locations) > 1}
     assert not duplicates, f"Duplicate env graph ids found: {duplicates}"
 
 
-def assert_references_exist(nodes: list[Any], tasks: list[Any], state_specs: list[Any]) -> None:
-    """Ensure every graph reference points to a node or state spec that exists."""
+def assert_constraint_references(nodes: list[Any], state_specs: list[Any]) -> None:
+    """Ensure every node parent and constraint reference points to a node that exists."""
     node_ids = {node.id for node in nodes}
-    state_spec_ids = {state_spec.id for state_spec in state_specs}
 
     # Track ids seen so far so a node's parent must be defined *earlier* in the list. The
     # conversion process (_instantiate_assets_from_nodes) materializes nodes in order and looks
@@ -66,15 +63,6 @@ def assert_references_exist(nodes: list[Any], tasks: list[Any], state_specs: lis
             )
         seen_node_ids.add(node.id)
 
-    for task in tasks:
-        for label, state_spec_id in (
-            ("initial_state_spec_id", task.initial_state_spec_id),
-            ("success_state_spec_id", task.success_state_spec_id),
-        ):
-            assert (
-                state_spec_id in state_spec_ids
-            ), f"Task '{task.id}' references unknown state spec '{state_spec_id}' for '{label}'"
-
     for state_spec in state_specs:
         for constraint in state_spec.spatial_constraints:
             assert (
@@ -85,15 +73,27 @@ def assert_references_exist(nodes: list[Any], tasks: list[Any], state_specs: lis
                     constraint.reference in node_ids
                 ), f"Constraint '{constraint.id}' references unknown reference node '{constraint.reference}'"
 
-        for constraint in state_spec.task_constraints:
-            if constraint.parent is not None:
+        for task_constraint in state_spec.task_constraints:
+            assert (
+                task_constraint.parent in node_ids
+            ), f"Task constraint '{task_constraint.id}' references unknown parent node '{task_constraint.parent}'"
+            if task_constraint.child is not None:
                 assert (
-                    constraint.parent in node_ids
-                ), f"Constraint '{constraint.id}' references unknown parent node '{constraint.parent}'"
-            if constraint.child is not None:
-                assert (
-                    constraint.child in node_ids
-                ), f"Constraint '{constraint.id}' references unknown child node '{constraint.child}'"
+                    task_constraint.child in node_ids
+                ), f"Task constraint '{task_constraint.id}' references unknown child node '{task_constraint.child}'"
+
+
+def assert_task_wiring(tasks: list[Any], state_specs: list[Any]) -> None:
+    """Ensure each task's ``initial_state_spec_id`` / ``success_state_spec_id`` references a state."""
+    state_spec_ids = {state_spec.id for state_spec in state_specs}
+    for task in tasks:
+        for label, state_spec_id in (
+            ("initial_state_spec_id", task.initial_state_spec_id),
+            ("success_state_spec_id", task.success_state_spec_id),
+        ):
+            assert (
+                state_spec_id in state_spec_ids
+            ), f"Task '{task.id}' references unknown state spec '{state_spec_id}' for '{label}'"
 
 
 def assert_spatial_constraint_shapes(state_specs: list[Any]) -> None:
@@ -157,11 +157,7 @@ def _add_id_location(id_locations: dict[str, list[str]], spec_id: str, location:
 
 
 def relation_class_for_spatial_constraint_type(constraint_type: str) -> type[RelationBase]:
-    """Resolve a spatial-constraint type string to its registered ``RelationBase`` subclass.
-
-    Expect a constraint_type already validated against ``ObjectRelationLibraryRegistry``.
-    Unregistered names results in a registry lookup error.
-    """
+    """Look up the ``RelationBase`` class registered for a constraint-type name; raises if unknown."""
     return ObjectRelationLibraryRegistry().get_object_relation_by_name(constraint_type)
 
 
