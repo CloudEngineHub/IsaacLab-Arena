@@ -14,18 +14,17 @@ import sys
 import tempfile
 import torch
 import traceback
-from gymnasium.wrappers import RecordVideo
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
-from isaaclab_arena.evaluation.camera_video import CameraObsVideoRecorder
 from isaaclab_arena.evaluation.eval_runner_cli import add_eval_runner_arguments
 from isaaclab_arena.evaluation.job_manager import Job, JobManager, Status
 from isaaclab_arena.evaluation.policy_runner import get_policy_cls, rollout_policy
 from isaaclab_arena.metrics.aggregate_metrics import aggregate_metrics
 from isaaclab_arena.metrics.metrics_logger import MetricsLogger
 from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppContext, teardown_simulation_app
+from isaaclab_arena.video.video_recording import VideoRecordingCfg, timestamped_run_dir, wrap_env_for_video
 from isaaclab_arena_environments.cli import get_arena_builder_from_cli, get_isaaclab_arena_environments_cli_parser
 
 if TYPE_CHECKING:
@@ -243,7 +242,7 @@ def main():
         return
 
     # Check if any job requires cameras and enable them if needed before starting simulation
-    if args_cli.camera_video:
+    if args_cli.record_camera_video:
         args_cli.enable_cameras = True
     enable_cameras_if_required(eval_jobs_config, args_cli)
 
@@ -253,9 +252,13 @@ def main():
 
         job_manager.print_jobs_info()
 
-        if args_cli.video:
-            os.makedirs(args_cli.video_dir, exist_ok=True)
-            print(f"[INFO] Video recording enabled. Videos will be saved to: {args_cli.video_dir}")
+        # One reverse-dated run directory shared by all jobs; each job gets a subdirectory within it.
+        recording = args_cli.record_viewport_video or args_cli.record_camera_video
+        run_video_dir = timestamped_run_dir(args_cli.video_base_dir) if recording else args_cli.video_base_dir
+
+        if args_cli.record_viewport_video:
+            os.makedirs(run_video_dir, exist_ok=True)
+            print(f"[INFO] Video recording enabled. Videos will be saved to: {run_video_dir}")
 
         for job in job_manager:
             if job is None:
@@ -272,8 +275,16 @@ def main():
             # aggregate the metrics across rebuilds into a single result.
             for rebuild_idx in range(job.num_rebuilds):
                 try:
-                    render_mode = "rgb_array" if args_cli.video else None
-                    env = load_env(job.arena_env_args, job.name, variations=job.variations, render_mode=render_mode)
+                    # Per-job video output directory; cameras are tagged with the rebuild index.
+                    video_cfg = VideoRecordingCfg(
+                        record_viewport_video=args_cli.record_viewport_video,
+                        record_camera_video=args_cli.record_camera_video,
+                        video_base_dir=os.path.join(run_video_dir, job.name),
+                        camera_name_prefix=f"robot-cam-rebuild{rebuild_idx}",
+                    )
+                    env = load_env(
+                        job.arena_env_args, job.name, variations=job.variations, render_mode=video_cfg.render_mode
+                    )
 
                     policy = get_policy_from_job(job)
 
@@ -288,28 +299,7 @@ def main():
                         else:
                             job.num_steps = args_cli.num_steps
 
-                    if args_cli.video:
-                        if job.num_steps is not None:
-                            video_length = job.num_steps
-                        else:
-                            video_length = num_episodes_this_rebuild * env.unwrapped.max_episode_length
-                        video_kwargs = {
-                            "video_folder": os.path.join(args_cli.video_dir, job.name),
-                            "step_trigger": lambda step: step == 0,
-                            "video_length": video_length,
-                            "disable_logger": True,
-                        }
-                        print(f"[INFO] Recording video for job '{job.name}' -> {video_kwargs['video_folder']}")
-                        env = RecordVideo(env, **video_kwargs)
-
-                    if args_cli.camera_video:
-                        job_video_dir = os.path.join(args_cli.video_dir, job.name)
-                        print(f"[INFO] Recording per-episode camera videos for job '{job.name}' -> {job_video_dir}")
-                        env = CameraObsVideoRecorder(
-                            env,
-                            video_folder=job_video_dir,
-                            name_prefix=f"robot-cam-rebuild{rebuild_idx}",
-                        )
+                    env = wrap_env_for_video(env, video_cfg, job.num_steps, num_episodes_this_rebuild)
 
                     metrics = rollout_policy(
                         env,
