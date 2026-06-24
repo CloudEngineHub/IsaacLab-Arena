@@ -33,6 +33,18 @@ def add_eval_runner_arguments(parser: argparse.ArgumentParser) -> None:
         help="Base directory for recorded videos; a reverse-dated run subdirectory and per-job subdirectory are added.",
     )
     parser.add_argument(
+        "--serve_evaluation_report",
+        action="store_true",
+        default=False,
+        help="After all jobs finish, serve the evaluation report over HTTP.",
+    )
+    parser.add_argument(
+        "--evaluation_report_port",
+        type=int,
+        default=8000,
+        help="Port to serve the evaluation report on when --serve_evaluation_report is set. Defaults to 8000.",
+    )
+    parser.add_argument(
         "--continue_on_error",
         action="store_true",
         default=False,
