@@ -27,10 +27,13 @@ def add_eval_runner_arguments(parser: argparse.ArgumentParser) -> None:
         help="Record one mp4 per (env, camera, episode) from obs['camera_obs'] for each eval job.",
     )
     parser.add_argument(
-        "--video_base_dir",
+        "--output_base_dir",
         type=str,
-        default="/eval/videos",
-        help="Base directory for recorded videos; a reverse-dated run subdirectory and per-job subdirectory are added.",
+        default="/eval/output",
+        help=(
+            "Base directory for evaluation outputs (videos, per-episode results, report); a"
+            " reverse-dated run subdirectory and per-job subdirectory are added."
+        ),
     )
     parser.add_argument(
         "--serve_evaluation_report",

@@ -38,17 +38,20 @@ def load_env(
     job_name: str,
     variations: list[str] | None = None,
     render_mode: str | None = None,
+    language_instruction: str | None = None,
 ):
 
     args_parser = get_isaaclab_arena_environments_cli_parser()
 
     arena_env_args_cli = args_parser.parse_args(arena_env_args)
+    # Optionally override the language instruction.
+    arena_env_args_cli.language_instruction = language_instruction
     arena_builder = get_arena_builder_from_cli(arena_env_args_cli, hydra_overrides=variations)
 
-    env_name, env_cfg, env_kwargs = arena_builder.build_registered()
+    _, env_cfg, env_kwargs = arena_builder.build_registered()
 
     # Set unique dataset filename for this job to avoid file locking conflicts
-    if hasattr(env_cfg, "recorders") and env_cfg.recorders is not None:
+    if env_cfg.recorders is not None:
         env_cfg.recorders.dataset_filename = f"dataset_{job_name}"
 
     env = arena_builder.make_registered(env_cfg, env_kwargs, render_mode=render_mode)
@@ -262,11 +265,11 @@ def main():
         # Always dated so every run produces its own report dir, recording or not.
         # TODO(alexmillane): Currently each chunk produces its own output directory.
         # We should use the same output directory for all chunks in the future.
-        run_video_dir = timestamped_run_dir(args_cli.video_base_dir)
+        run_output_dir = timestamped_run_dir(args_cli.output_base_dir)
 
         if args_cli.record_viewport_video:
-            os.makedirs(run_video_dir, exist_ok=True)
-            print(f"[INFO] Video recording enabled. Videos will be saved to: {run_video_dir}")
+            os.makedirs(run_output_dir, exist_ok=True)
+            print(f"[INFO] Video recording enabled. Videos will be saved to: {run_output_dir}")
 
         for job in job_manager:
             if job is None:
@@ -283,16 +286,29 @@ def main():
             # aggregate the metrics across rebuilds into a single result.
             for rebuild_idx in range(job.num_rebuilds):
                 try:
+                    job_output_dir = os.path.join(run_output_dir, job.name)
+
                     # Per-job video output directory; cameras are tagged with the rebuild index.
                     video_cfg = VideoRecordingCfg(
                         record_viewport_video=args_cli.record_viewport_video,
                         record_camera_video=args_cli.record_camera_video,
-                        video_base_dir=os.path.join(run_video_dir, job.name),
+                        video_base_dir=job_output_dir,
                         camera_name_prefix=f"robot-cam-rebuild{rebuild_idx}",
                     )
                     env = load_env(
-                        job.arena_env_args, job.name, variations=job.variations, render_mode=video_cfg.render_mode
+                        job.arena_env_args,
+                        job.name,
+                        variations=job.variations,
+                        render_mode=video_cfg.render_mode,
+                        language_instruction=job.language_instruction,
                     )
+
+                    # Write per-episode results to disk.
+                    # TODO: Aggregate the per-episode records across rebuilds into a single file,
+                    # as is done for the metrics below.
+                    results_path = os.path.join(job_output_dir, f"episode_results_rebuild{rebuild_idx}.jsonl")
+                    env.unwrapped.episode_recorder.set_job_name(job.name)
+                    env.unwrapped.episode_recorder.set_output_path(results_path)
 
                     policy = get_policy_from_job(job)
 
@@ -314,7 +330,6 @@ def main():
                         policy,
                         num_steps=job.num_steps,
                         num_episodes=num_episodes_this_rebuild,
-                        language_instruction=job.language_instruction,
                     )
 
                     job_manager.complete_job(job, metrics=metrics, status=Status.COMPLETED)
@@ -347,7 +362,7 @@ def main():
         metrics_logger.print_metrics()
 
         # Write HTML report.
-        report_path = build_report(run_video_dir)
+        report_path = build_report(run_output_dir)
         if args_cli.serve_evaluation_report:
             serve_until_ctrl_c(report_path.parent, args_cli.evaluation_report_port, report_path.name)
 

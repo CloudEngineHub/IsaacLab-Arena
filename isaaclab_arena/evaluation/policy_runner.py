@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import torch
 import tqdm
 from importlib import import_module
@@ -64,7 +65,6 @@ def rollout_policy(
     policy: PolicyBase,
     num_steps: int | None,
     num_episodes: int | None,
-    language_instruction: str | None = None,
 ) -> MetricsDataCollection | None:
     assert num_steps is not None or num_episodes is not None, "Either num_steps or num_episodes must be provided"
     assert num_steps is None or num_episodes is None, "Only one of num_steps or num_episodes must be provided"
@@ -73,10 +73,7 @@ def rollout_policy(
     try:
         obs, _ = env.reset()
         policy.reset()
-        # Determine language instruction: CLI/job-level override takes precedence over the task's own
-        # description. Use unwrapped to reach the base env through any gym wrappers (e.g. OrderEnforcing).
-        task_description = language_instruction or env.unwrapped.cfg.task_description
-        policy.set_task_description(task_description)
+        policy.set_task_description(env.unwrapped.get_language_instruction())
 
         # Setup progress bar based on num_steps or num_episodes
         if num_steps is not None:
@@ -192,12 +189,18 @@ def main():
             print(arena_builder.get_variations_catalogue_as_string())
             return
 
+        output_dir = timestamped_run_dir(args_cli.output_base_dir)
         video_cfg = VideoRecordingCfg(
             record_viewport_video=args_cli.record_viewport_video,
             record_camera_video=args_cli.record_camera_video,
-            video_base_dir=timestamped_run_dir(args_cli.video_base_dir),
+            video_base_dir=output_dir,
         )
-        env, cfg = arena_builder.make_registered_and_return_cfg(render_mode=video_cfg.render_mode)
+        env = arena_builder.make_registered(render_mode=video_cfg.render_mode)
+
+        # Write per-episode results to disk.
+        results_path = os.path.join(output_dir, f"episode_results_rank{local_rank}.jsonl")
+        env.unwrapped.episode_recorder.set_job_name("policy_runner")
+        env.unwrapped.episode_recorder.set_output_path(results_path)
 
         # Create the policy from the arguments
         policy = policy_cls.from_args(args_cli)
@@ -223,7 +226,7 @@ def main():
 
         steps_str = f"{num_steps} steps" if num_steps is not None else f"{num_episodes} episodes"
         print(f"[Rank {local_rank}/{world_size}] Starting rollout ({steps_str})")
-        metrics = rollout_policy(env, policy, num_steps, num_episodes, args_cli.language_instruction)
+        metrics = rollout_policy(env, policy, num_steps, num_episodes)
 
         if metrics is not None:
             print(f"[Rank {local_rank}/{world_size}] Metrics: {metrics_to_plain_python_types(metrics)}")
@@ -241,7 +244,7 @@ def main():
         # Write and serve the evaluation report.
         # Only the local rank 0 writes/serves it, to avoid races on a shared output dir.
         if get_local_rank() == 0:
-            report_path = build_report(video_cfg.video_base_dir)
+            report_path = build_report(output_dir)
             if args_cli.serve_evaluation_report:
                 serve_until_ctrl_c(report_path.parent, args_cli.evaluation_report_port, report_path.name)
 
