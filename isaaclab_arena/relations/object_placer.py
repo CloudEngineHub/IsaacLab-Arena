@@ -6,16 +6,22 @@
 from __future__ import annotations
 
 import torch
+import trimesh
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from isaaclab_arena.relations.bounding_box_helpers import assign_variants_for_envs, build_per_env_bounding_boxes
-from isaaclab_arena.relations.collision_mode import CollisionMode
+from isaaclab_arena.relations.collision_mode import CollisionMode, get_object_collision_mode, object_uses_mesh_collision
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
 from isaaclab_arena.relations.placement_result import PlacementResult
 from isaaclab_arena.relations.placement_validation import PlacementCheck, PlacementValidationResults
-from isaaclab_arena.relations.relation_loss_strategies import SIDE_CONFIGS, next_to_violations, not_next_to_violations
+from isaaclab_arena.relations.relation_loss_strategies import (
+    SIDE_CONFIGS,
+    NotNextToLossStrategy,
+    next_to_violations,
+    not_next_to_violations,
+)
 from isaaclab_arena.relations.relation_solver import RelationSolver
 from isaaclab_arena.relations.relations import (
     FaceTo,
@@ -27,7 +33,6 @@ from isaaclab_arena.relations.relations import (
     RotateAroundSolution,
     get_anchor_objects,
 )
-from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
 from isaaclab_arena.relations.warp_sdf_kernels import has_sdf_sentinel, mesh_sdf
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.pose import Pose, PosePerEnv
@@ -41,9 +46,9 @@ from isaaclab_arena.utils.yaw import (
 )
 
 if TYPE_CHECKING:
-    import trimesh
-
     from isaaclab_arena.assets.object_base import ObjectBase
+    from isaaclab_arena.relations.collision_object import CollisionObject
+    from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
 
 
 RelationT = TypeVar("RelationT", bound=RelationBase)
@@ -99,6 +104,7 @@ class ObjectPlacer:
         self,
         objects: list[ObjectBase],
         num_envs: int = 1,
+        collision_objects: list[CollisionObject] | None = None,
     ) -> list[PlacementResult]:
         """Place objects according to their spatial relations.
 
@@ -112,10 +118,13 @@ class ObjectPlacer:
                 marked with IsAnchor() which serves as a fixed reference.
             num_envs: Number of environments. 1 for single-env; > 1 for batched
                 placement (one layout per env).
+            collision_objects: Optional fixed background obstacles avoided during
+                placement but never optimized or relation-constrained.
 
         Returns:
             One PlacementResult per environment.
         """
+        collision_objects = collision_objects or []
         anchor_objects_set, generator = self._prepare_placement(objects)
         max_attempts = self.params.max_placement_attempts
         ranked_results_per_env = self._place_ranked(
@@ -125,6 +134,7 @@ class ObjectPlacer:
             candidates_per_env=max_attempts,
             attempts_per_result=max_attempts,
             generator=generator,
+            collision_objects=collision_objects,
         )
         results_per_env = [env_results[0] for env_results in ranked_results_per_env]
 
@@ -148,6 +158,7 @@ class ObjectPlacer:
         objects: list[ObjectBase],
         num_envs: int,
         results_per_env: int,
+        collision_objects: list[CollisionObject] | None = None,
     ) -> list[list[PlacementResult]]:
         """Return ranked placement candidates per env.
 
@@ -156,7 +167,12 @@ class ObjectPlacer:
         The return value has shape (num_envs, results_per_env): each
         outer list entry corresponds to a real env, and each inner list is
         sorted with valid lower-loss layouts first.
+
+        Args:
+            collision_objects: Optional fixed background obstacles avoided during
+                placement but never optimized or relation-constrained.
         """
+        collision_objects = collision_objects or []
         assert results_per_env > 0, f"results_per_env must be positive, got {results_per_env}"
         anchor_objects_set, generator = self._prepare_placement(objects)
         max_attempts = self.params.max_placement_attempts
@@ -167,6 +183,7 @@ class ObjectPlacer:
             candidates_per_env=max_attempts * results_per_env,
             attempts_per_result=max_attempts,
             generator=generator,
+            collision_objects=collision_objects,
         )
 
         return [ranked_results[:results_per_env] for ranked_results in ranked_results_per_env]
@@ -213,6 +230,7 @@ class ObjectPlacer:
         candidates_per_env: int,
         attempts_per_result: int,
         generator: torch.Generator | None,
+        collision_objects: list[CollisionObject] | None = None,
     ) -> list[list[PlacementResult]]:
         """Solve and rank placement candidates per environment.
 
@@ -220,6 +238,7 @@ class ObjectPlacer:
         candidates are ranked independently (valid first, then by loss), so a
         candidate is never compared against another env's geometry.
         """
+        collision_objects = collision_objects or []
         # Variant assignment fixes the env-to-USD mapping before bbox expansion.
         assign_variants_for_envs(objects, num_envs, placement_seed=self.params.placement_seed)
         num_candidates = num_envs * candidates_per_env
@@ -247,7 +266,12 @@ class ObjectPlacer:
         )
 
         all_positions = self._solver.solve(
-            objects, initial_positions, env_bboxes=candidate_bboxes, orientations=orientations_per_candidate
+            objects,
+            initial_positions,
+            env_bboxes=candidate_bboxes,
+            env_bboxes_include_yaw=any(orientations for orientations in orientations_per_candidate),
+            orientations=orientations_per_candidate,
+            collision_objects=collision_objects,
         )
         self._apply_face_to_orientations(all_positions, orientations_per_candidate)
         # FaceTo yaw is only known after solving, so rebuild from unrotated boxes before validation.
@@ -261,6 +285,7 @@ class ObjectPlacer:
                 positions,
                 self._get_bounding_boxes_for_candidate_index(candidate_bboxes, candidate_idx),
                 orientations_per_candidate[candidate_idx],
+                collision_objects,
             )
             for candidate_idx, positions in enumerate(all_positions)
         ]
@@ -389,10 +414,8 @@ class ObjectPlacer:
     ) -> dict[ObjectBase, float]:
         """Sample absolute world Z-yaws for non-anchor objects without FaceTo.
 
-        Empty dict when random_yaw_init is off.
+        Marker yaw is always included; random_yaw_init adds a sampled delta.
         """
-        if not self.params.random_yaw_init:
-            return {}
         orientations: dict[ObjectBase, float] = {}
         for obj in objects:
             marker_yaw = self._get_yaw_from_rotate_around_solution(obj)
@@ -403,7 +426,10 @@ class ObjectPlacer:
                     "already be baked into the anchor's initial_pose before calling place()."
                 )
             elif self._get_relation(obj, FaceTo) is None:
-                orientations[obj] = wrap_angle_to_pi(get_random_rotation(generator) + marker_yaw)
+                sampled_yaw = get_random_rotation(generator) if self.params.random_yaw_init else 0.0
+                total_yaw = wrap_angle_to_pi(sampled_yaw + marker_yaw)
+                if total_yaw != 0.0:
+                    orientations[obj] = total_yaw
         return orientations
 
     @staticmethod
@@ -667,9 +693,10 @@ class ObjectPlacer:
         positions: dict[ObjectBase, tuple[float, float, float]],
         skip_mesh_pairs: bool = False,
     ) -> Iterator[tuple[ObjectBase, ObjectBase]]:
-        """Yield (a, b) pairs for overlap checks, skipping On/anchor-anchor/mesh pairs as configured."""
+        """Yield non-relation object pairs, optionally skipping pairs handled by mesh collision."""
         on_pairs, anchor_ids = self._collect_skip_pairs(positions)
         mesh_manager = self._get_cpu_mesh_manager() if skip_mesh_pairs else None
+        default_collision_mode = self.params.solver_params.collision_mode
         objects = list(positions.keys())
         for i in range(len(objects)):
             for j in range(i + 1, len(objects)):
@@ -678,10 +705,15 @@ class ObjectPlacer:
                     continue
                 if (id(a), id(b)) in on_pairs:
                     continue
-                if (
-                    mesh_manager is not None
-                    and mesh_manager.get_collision_mesh(a) is not None
-                    and mesh_manager.get_collision_mesh(b) is not None
+                if mesh_manager is not None and (
+                    (
+                        object_uses_mesh_collision(a, default_collision_mode)
+                        and mesh_manager.get_collision_mesh(a) is not None
+                    )
+                    or (
+                        object_uses_mesh_collision(b, default_collision_mode)
+                        and mesh_manager.get_collision_mesh(b) is not None
+                    )
                 ):
                     continue
                 yield a, b
@@ -690,17 +722,41 @@ class ObjectPlacer:
         self,
         positions: dict[ObjectBase, tuple[float, float, float]],
         env_bboxes: dict[ObjectBase, AxisAlignedBoundingBox],
+        collision_objects: list[CollisionObject] | None = None,
         skip_mesh_pairs: bool = False,
     ) -> bool:
         """AABB overlap check on pre-rotated env_bboxes. Skips On-pairs and anchor-anchor pairs."""
         clearance_m = self.params.solver_params.clearance_m
         margin = max(0.0, clearance_m - 1e-6)
+        collision_objects = collision_objects or []
+        _, anchor_ids = self._collect_skip_pairs(positions)
 
         for a, b in self._non_skip_pairs(positions, skip_mesh_pairs=skip_mesh_pairs):
             if self._pair_aabb_overlaps(env_bboxes[a], env_bboxes[b], positions[a], positions[b], 0.0, 0.0, margin):
                 if self.params.verbose:
                     print(f"  Overlap between '{a.name}' and '{b.name}'")
                 return False
+
+        # Placed (non-anchor) objects must also clear the fixed background obstacles.
+        # Anchors are fixed scene geometry too, so anchor-vs-background overlap is not gated.
+        background_worlds = [(bg, bg.get_world_bounding_box()) for bg in collision_objects]
+        mesh_manager = self._get_cpu_mesh_manager() if skip_mesh_pairs else None
+        default_collision_mode = self.params.solver_params.collision_mode
+        for obj in positions:
+            if id(obj) in anchor_ids:
+                continue
+            obj_world = env_bboxes[obj].translated(positions[obj])
+            for background, background_world in background_worlds:
+                if (
+                    mesh_manager is not None
+                    and object_uses_mesh_collision(background, default_collision_mode)
+                    and mesh_manager.get_collision_mesh(background) is not None
+                ):
+                    continue
+                if obj_world.overlaps(background_world, margin=margin).item():
+                    if self.params.verbose:
+                        print(f"  Overlap between '{obj.name}' and background '{background.name}'")
+                    return False
         return True
 
     def _validate_next_to_relations(
@@ -781,12 +837,14 @@ class ObjectPlacer:
 
     def _not_next_to_margin(self, relation: NotNextTo) -> float:
         """Keep-out margin_m from the registered NotNextTo loss strategy (stays in sync with the solver)."""
-        strategy = self._solver.params.strategies[type(relation)]
+        strategy = cast(NotNextToLossStrategy, self._solver.params.strategies[type(relation)])
         return strategy.margin_m
 
     def _get_cpu_mesh_manager(self) -> WarpMeshAndSphereCache:
         """Return the CPU-device mesh manager, creating it on first call."""
         if self._cpu_mesh_manager is None:
+            from isaaclab_arena.relations.warp_mesh_manager import WarpMeshAndSphereCache
+
             self._cpu_mesh_manager = WarpMeshAndSphereCache(
                 num_spheres=self.params.solver_params.num_spheres,
                 device="cpu",
@@ -796,21 +854,27 @@ class ObjectPlacer:
     def _validate_no_overlap_mesh(
         self,
         positions: dict[ObjectBase, tuple[float, float, float]],
+        env_bboxes: dict[ObjectBase, AxisAlignedBoundingBox],
         orientations: dict[ObjectBase, float] | None = None,
+        collision_objects: list[CollisionObject] | None = None,
     ) -> bool:
-        """Sphere-to-SDF overlap check. Mesh-less pairs fall back to AABB."""
+        """Sphere-to-SDF overlap check; both-meshless pairs fall back to AABB validation."""
         clearance_m = self.params.solver_params.clearance_m
         tolerance = max(0.0, clearance_m - 1e-6)
         mesh_manager = self._get_cpu_mesh_manager()
         mesh_manager.reset_sentinel_warning()
         warned_no_mesh: set[str] = set()
+        collision_objects = collision_objects or []
+        default_collision_mode = self.params.solver_params.collision_mode
 
         for a, b in self._non_skip_pairs(positions):
-            a_mesh = mesh_manager.get_collision_mesh(a)
-            b_mesh = mesh_manager.get_collision_mesh(b)
-            if a_mesh is None or b_mesh is None:
-                for obj, mesh in [(a, a_mesh), (b, b_mesh)]:
-                    if mesh is None and obj.name not in warned_no_mesh:
+            a_uses_mesh = object_uses_mesh_collision(a, default_collision_mode)
+            b_uses_mesh = object_uses_mesh_collision(b, default_collision_mode)
+            a_mesh = mesh_manager.get_collision_mesh(a) if a_uses_mesh else None
+            b_mesh = mesh_manager.get_collision_mesh(b) if b_uses_mesh else None
+            if a_mesh is None and b_mesh is None:
+                for obj, uses_mesh, mesh in [(a, a_uses_mesh, a_mesh), (b, b_uses_mesh, b_mesh)]:
+                    if uses_mesh and mesh is None and obj.name not in warned_no_mesh:
                         warned_no_mesh.add(obj.name)
                         print(
                             f"  [NoCollision] MESH mode: '{obj.name}' has no collision mesh,"
@@ -821,29 +885,126 @@ class ObjectPlacer:
             a_pos = torch.tensor(positions[a], dtype=torch.float32)
             b_pos = torch.tensor(positions[b], dtype=torch.float32)
 
-            if self._spheres_penetrate_mesh(a, a_mesh, a_pos, b, b_mesh, b_pos, mesh_manager, tolerance, orientations):
+            if b_mesh is not None and self._spheres_penetrate_mesh(
+                a,
+                self._collision_mesh_or_aabb_proxy(a_mesh, env_bboxes[a]),
+                a if a_mesh is not None else None,
+                a_mesh is not None,
+                a.is_anchor,
+                a_pos,
+                b,
+                b_mesh,
+                b_pos,
+                b.is_anchor,
+                mesh_manager,
+                tolerance,
+                orientations,
+            ):
                 return False
-            if self._spheres_penetrate_mesh(b, b_mesh, b_pos, a, a_mesh, a_pos, mesh_manager, tolerance, orientations):
+            if a_mesh is not None and self._spheres_penetrate_mesh(
+                b,
+                self._collision_mesh_or_aabb_proxy(b_mesh, env_bboxes[b]),
+                b if b_mesh is not None else None,
+                b_mesh is not None,
+                b.is_anchor,
+                b_pos,
+                a,
+                a_mesh,
+                a_pos,
+                a.is_anchor,
+                mesh_manager,
+                tolerance,
+                orientations,
+            ):
                 return False
 
+        for source in positions:
+            if source.is_anchor:
+                continue
+            source_mesh = (
+                mesh_manager.get_collision_mesh(source)
+                if object_uses_mesh_collision(source, default_collision_mode)
+                else None
+            )
+            source_pos = torch.tensor(positions[source], dtype=torch.float32)
+            for background in collision_objects:
+                target_mesh = (
+                    mesh_manager.get_collision_mesh(background)
+                    if object_uses_mesh_collision(background, default_collision_mode)
+                    else None
+                )
+                if target_mesh is None:
+                    continue
+                target_pose = background.get_initial_pose()
+                assert isinstance(
+                    target_pose, Pose
+                ), f"Background collision object '{background.name}' must have a fixed Pose in MESH mode."
+                target_pos = torch.tensor(target_pose.position_xyz, dtype=torch.float32)
+                if self._spheres_penetrate_mesh(
+                    source,
+                    self._collision_mesh_or_aabb_proxy(source_mesh, env_bboxes[source]),
+                    source if source_mesh is not None else None,
+                    source_mesh is not None,
+                    source.is_anchor,
+                    source_pos,
+                    background,
+                    target_mesh,
+                    target_pos,
+                    True,
+                    mesh_manager,
+                    tolerance,
+                    orientations,
+                ):
+                    return False
+
         return True
+
+    @staticmethod
+    def _collision_mesh_or_aabb_proxy(
+        mesh: trimesh.Trimesh | None,
+        bbox: AxisAlignedBoundingBox,
+    ) -> trimesh.Trimesh:
+        """Return an object's collision mesh, or a box mesh matching the candidate AABB."""
+        if mesh is not None:
+            return mesh
+        box_mesh = trimesh.creation.box(extents=bbox.size[0].detach().cpu().numpy())
+        box_mesh.apply_translation(bbox.center[0].detach().cpu().numpy())
+        return box_mesh
 
     def _spheres_penetrate_mesh(
         self,
         source: ObjectBase,
         source_mesh: trimesh.Trimesh,
+        source_sphere_cache_obj: ObjectBase | None,
+        source_applies_yaw: bool,
+        source_uses_pose_yaw: bool,
         source_pos: torch.Tensor,
-        target: ObjectBase,
+        target: ObjectBase | CollisionObject,
         target_mesh: trimesh.Trimesh,
         target_pos: torch.Tensor,
+        target_uses_pose_yaw: bool,
         mesh_manager: WarpMeshAndSphereCache,
         tolerance: float,
         orientations: dict[ObjectBase, float] | None,
     ) -> bool:
-        """True if source's spheres penetrate target's mesh or if BVH returns no-face sentinel."""
-        spheres = mesh_manager.get_query_spheres(source_mesh, obj=source)
+        """True if source's spheres penetrate target's mesh or if BVH returns no-face sentinel.
+
+        source_applies_yaw describes whether sphere centers need sampled-yaw rotation.
+        *_uses_pose_yaw controls whether fixed anchors/passive obstacles contribute pose yaw.
+        """
+        spheres = mesh_manager.get_query_spheres(source_mesh, obj=source_sphere_cache_obj)
         warp_mesh = mesh_manager.get_warp_mesh(target_mesh, obj=target)
-        centers = self._centers_in_target_frame(spheres[:, :3], source, target, source_pos, target_pos, orientations)
+        centers = self._centers_in_target_frame(
+            spheres[:, :3],
+            source,
+            target,
+            source_pos,
+            target_pos,
+            orientations,
+            source_applies_yaw=source_applies_yaw,
+            source_uses_pose_yaw=source_uses_pose_yaw,
+            target_uses_pose_yaw=target_uses_pose_yaw,
+        )
         sdf = mesh_sdf(centers, warp_mesh)
         mesh_manager.warn_sdf_sentinel(sdf)
         if has_sdf_sentinel(sdf):
@@ -855,11 +1016,15 @@ class ObjectPlacer:
         return False
 
     @staticmethod
-    def _effective_yaw(obj: ObjectBase, orientations: dict[ObjectBase, float] | None) -> float:
-        """Resolve effective Z-yaw: orientations dict, else initial_pose for anchors."""
+    def _effective_yaw(
+        obj: ObjectBase | CollisionObject,
+        orientations: dict[ObjectBase, float] | None,
+        use_pose_yaw: bool,
+    ) -> float:
+        """Resolve effective Z-yaw from sampled orientations or, when allowed, fixed initial pose."""
         if orientations is not None and obj in orientations:
-            return orientations[obj]
-        if not obj.is_anchor:
+            return orientations[cast("ObjectBase", obj)]
+        if not use_pose_yaw:
             return 0.0
         pose = obj.get_initial_pose()
         if not isinstance(pose, Pose):
@@ -889,14 +1054,19 @@ class ObjectPlacer:
     def _centers_in_target_frame(
         centers_local: torch.Tensor,
         source_obj: ObjectBase,
-        target_obj: ObjectBase,
+        target_obj: ObjectBase | CollisionObject,
         source_pos: torch.Tensor,
         target_pos: torch.Tensor,
         orientations: dict[ObjectBase, float] | None,
+        source_applies_yaw: bool = True,
+        source_uses_pose_yaw: bool = True,
+        target_uses_pose_yaw: bool = True,
     ) -> torch.Tensor:
         """Transform source sphere centers into the target's local frame (Z-yaw only)."""
-        src_yaw = ObjectPlacer._effective_yaw(source_obj, orientations)
-        tgt_yaw = ObjectPlacer._effective_yaw(target_obj, orientations)
+        src_yaw = (
+            ObjectPlacer._effective_yaw(source_obj, orientations, source_uses_pose_yaw) if source_applies_yaw else 0.0
+        )
+        tgt_yaw = ObjectPlacer._effective_yaw(target_obj, orientations, target_uses_pose_yaw)
         return centers_in_target_frame(centers_local, src_yaw, tgt_yaw, source_pos - target_pos)
 
     def _validate_placement(
@@ -904,6 +1074,7 @@ class ObjectPlacer:
         positions: dict[ObjectBase, tuple[float, float, float]],
         env_bboxes: dict[ObjectBase, AxisAlignedBoundingBox],
         orientations: dict[ObjectBase, float] | None = None,
+        collision_objects: list[CollisionObject] | None = None,
     ) -> PlacementValidationResults:
         """Validate overlap and all supported placement relations.
 
@@ -911,34 +1082,48 @@ class ObjectPlacer:
             positions: Dictionary mapping objects to their solved (x, y, z) positions.
             env_bboxes: Per-object bboxes for the current env, each with shape (1, 3).
             orientations: Optional per-object yaw (radians about Z).
+            collision_objects: Fixed background obstacles to test placed objects against.
 
         Returns:
             PlacementValidationResults with the overlap and relation checks.
         """
-        use_mesh = self.params.solver_params.collision_mode == CollisionMode.MESH
-        no_overlap = self._validate_no_overlap(positions, env_bboxes, skip_mesh_pairs=use_mesh)
+        use_mesh = self._should_validate_mesh(positions, collision_objects)
+        no_overlap = self._validate_no_overlap(
+            positions,
+            env_bboxes,
+            collision_objects=collision_objects,
+            skip_mesh_pairs=use_mesh,
+        )
         if no_overlap and use_mesh:
-            no_overlap = self._validate_no_overlap_mesh(positions, orientations)
+            no_overlap = self._validate_no_overlap_mesh(positions, env_bboxes, orientations, collision_objects)
         on_relation = self._validate_on_relations(positions, env_bboxes)
         next_to = self._validate_next_to_relations(positions, env_bboxes)
         not_next_to = self._validate_not_next_to_relations(positions, env_bboxes)
         face_to = self._validate_face_to_relations(positions, orientations)
 
-        return PlacementValidationResults(
-            validation_results={
+        validation_results = cast(
+            dict[PlacementCheck, bool],
+            {
                 PlacementCheck.NO_OVERLAP: no_overlap,
                 PlacementCheck.ON_RELATION: on_relation,
                 PlacementCheck.NEXT_TO: next_to,
                 PlacementCheck.NOT_NEXT_TO: not_next_to,
                 PlacementCheck.FACE_TO: face_to,
             },
-            required_checks={
+        )
+        required_checks = cast(
+            set[PlacementCheck],
+            {
                 PlacementCheck.NO_OVERLAP,
                 PlacementCheck.ON_RELATION,
                 PlacementCheck.NEXT_TO,
                 PlacementCheck.NOT_NEXT_TO,
                 PlacementCheck.FACE_TO,
             },
+        )
+        return PlacementValidationResults(
+            validation_results=validation_results,
+            required_checks=required_checks,
         )
 
     def _validate_face_to_relations(
@@ -963,6 +1148,18 @@ class ObjectPlacer:
                     print(f"  FaceTo: '{obj.name}' has no computed facing yaw")
                 return False
         return True
+
+    def _should_validate_mesh(
+        self,
+        positions: dict[ObjectBase, tuple[float, float, float]],
+        collision_objects: list[CollisionObject] | None,
+    ) -> bool:
+        """Return True when any object in this validation uses mesh collision."""
+        default_collision_mode = self.params.solver_params.collision_mode
+        if default_collision_mode == CollisionMode.MESH:
+            return True
+        objects = [*positions.keys(), *(collision_objects or [])]
+        return any(get_object_collision_mode(obj, default_collision_mode) == CollisionMode.MESH for obj in objects)
 
     def _apply_poses(
         self,
