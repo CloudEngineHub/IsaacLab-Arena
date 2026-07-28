@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, TypeVar
 from isaaclab.utils.math import euler_xyz_from_quat
 
 from isaaclab_arena.assets.register import register_object_relation
+from isaaclab_arena.assets.registries import ObjectRelationLibraryRegistry
 from isaaclab_arena.utils.pose import PoseRange  # runtime: constructed in to_pose_range_centered_at()
 
 if TYPE_CHECKING:
@@ -49,7 +50,7 @@ class UnaryRelation(RelationBase):
     """Base class for unary spatial relations (no parent object).
 
     Unary relations constrain an object's position in world coordinates
-    without referencing another object (e.g., AtPosition, PositionLimits).
+    without referencing another object (e.g., AtPosition, PositionLimitsBox).
     """
 
     @staticmethod
@@ -490,17 +491,17 @@ class AtPosition(UnaryRelation):
 
 
 @register_object_relation
-class PositionLimits(UnaryRelation):
-    """Constrains object position to a world-coordinate axis-aligned box.
+class PositionLimitsBox(UnaryRelation):
+    """Constrains an object's position to an axis-aligned box in world coordinates.
 
-    Each axis is independently optional (None = unconstrained).
+    Each axis bound is independently optional (None = unconstrained).
 
     Usage:
-        mug.add_relation(PositionLimits(x_min=-0.5, x_max=0.5, y_min=-0.5, y_max=0.5))
-        mug.add_relation(PositionLimits(z_min=0.8))  # only constrain Z
+        mug.add_relation(PositionLimitsBox(x_min=-0.5, x_max=0.5, y_min=-0.5, y_max=0.5))
+        mug.add_relation(PositionLimitsBox(z_min=0.8))  # only constrain Z
     """
 
-    name = "position_limits"
+    name = "position_limits_box"
 
     def __init__(
         self,
@@ -512,14 +513,9 @@ class PositionLimits(UnaryRelation):
         z_max: float | None = None,
         relation_loss_weight: float = 1.0,
     ):
-        assert (
-            x_min is not None
-            or x_max is not None
-            or y_min is not None
-            or y_max is not None
-            or z_min is not None
-            or z_max is not None
-        ), "At least one bound (x_min, x_max, y_min, y_max, z_min, or z_max) must be specified for PositionLimits"
+        assert any(
+            bound is not None for bound in (x_min, x_max, y_min, y_max, z_min, z_max)
+        ), "At least one axis bound must be specified for PositionLimitsBox"
         if x_min is not None and x_max is not None:
             assert x_min < x_max, f"x_min must be less than x_max, got x_min={x_min}, x_max={x_max}"
         if y_min is not None and y_max is not None:
@@ -532,6 +528,51 @@ class PositionLimits(UnaryRelation):
         self.y_max = y_max
         self.z_min = z_min
         self.z_max = z_max
+        self.relation_loss_weight = relation_loss_weight
+
+
+# Keep the original Python and YAML names as aliases for box limits.
+PositionLimits = PositionLimitsBox
+_relation_registry = ObjectRelationLibraryRegistry()
+if not _relation_registry.is_registered("position_limits", ensure_loaded=False):
+    _relation_registry.register(PositionLimitsBox, "position_limits")
+
+
+@register_object_relation
+class PositionLimitsCylindrical(UnaryRelation):
+    """Constrains an object's world-XY radius around a fixed center.
+
+    A lower bound creates a cylindrical keep-out region, an upper bound keeps
+    the object inside a cylinder, and both bounds create a cylindrical annulus.
+    The relation constrains only XY; use ``PositionLimitsBox`` separately for Z
+    or axis-aligned XY limits.
+
+    Usage:
+        mug.add_relation(PositionLimitsCylindrical(center_x=0.0, center_y=0.0, radius_max=0.5))
+    """
+
+    name = "position_limits_cylindrical"
+
+    def __init__(
+        self,
+        center_x: float,
+        center_y: float,
+        radius_min: float | None = None,
+        radius_max: float | None = None,
+        relation_loss_weight: float = 1.0,
+    ):
+        assert (
+            radius_min is not None or radius_max is not None
+        ), "At least one radial bound must be specified for PositionLimitsCylindrical"
+        assert radius_min is None or radius_min >= 0.0, "radius_min must be non-negative"
+        assert radius_max is None or radius_max >= 0.0, "radius_max must be non-negative"
+        assert (
+            radius_min is None or radius_max is None or radius_min < radius_max
+        ), "radius_min must be less than radius_max"
+        self.center_x = center_x
+        self.center_y = center_y
+        self.radius_min = radius_min
+        self.radius_max = radius_max
         self.relation_loss_weight = relation_loss_weight
 
 
