@@ -34,7 +34,12 @@ from osmo.tasks.collect_experiment_outputs_task import (
     _REMOTE_EXPERIMENT_RUNNER_OUTPUT_DIRECTORIES_FILE_PATH,
     experiment_runner_output_directory_input_token,
 )
-from osmo.tasks.experiment_runner_task import REMOTE_EXPERIMENT_PATH, ExperimentRunnerTask, ExperimentRunnerTaskCfg
+from osmo.tasks.experiment_runner_task import (
+    EXPERIMENT_RUNNER_RESULT_FILE_NAME,
+    REMOTE_EXPERIMENT_PATH,
+    ExperimentRunnerTask,
+    ExperimentRunnerTaskCfg,
+)
 from osmo.tasks.gr00t_server_task import Gr00tServerTask, Gr00tServerTaskCfg
 from osmo.tasks.pi0_server_task import Pi0ServerTask, Pi0ServerTaskCfg
 from osmo.workflows.arena_experiment_workflow import ArenaExperimentWorkflow
@@ -226,11 +231,23 @@ def test_fans_out_single_run_experiments_with_dedicated_pi0_servers_and_one_expe
     assert source_experiment_cfg.runs["first"].policy.ping_timeout == 10
 
     experiment_runner_command = _task_file(first_tasks[0], "/tmp/entry.sh")["contents"]
+    assert "set -euo pipefail" not in experiment_runner_command
+    assert experiment_runner_command.startswith("# Record the application result without failing the OSMO task")
+    assert "if /isaac-sim/python.sh" in experiment_runner_command
     assert "experiment_runner.py" in experiment_runner_command
     assert f"--experiment_config {REMOTE_EXPERIMENT_PATH}" in experiment_runner_command
     assert f"--experiment_output_directory '{OSMO_TASK_OUTPUT_DIR}'" in experiment_runner_command
     assert "--output_base_dir" not in experiment_runner_command
     assert "--enable_cameras" in experiment_runner_command
+    assert "--record_camera_video" in experiment_runner_command
+    assert "--record_viewport_video" not in experiment_runner_command
+    assert "--continue_on_error" not in experiment_runner_command
+    assert "experiment_runner_process_exit_code=$?" in experiment_runner_command
+    assert "experiment_runner_execution_status=completed" in experiment_runner_command
+    assert "experiment_runner_execution_status=failed" in experiment_runner_command
+    assert f"'{OSMO_TASK_OUTPUT_DIR}/{EXPERIMENT_RUNNER_RESULT_FILE_NAME}'" in experiment_runner_command
+    assert "always report success to OSMO" in experiment_runner_command
+    assert experiment_runner_command.endswith("exit 0\n")
     assert "policy_runner.py" not in experiment_runner_command
     assert "runs." not in experiment_runner_command
 
@@ -262,6 +279,7 @@ def test_fans_out_single_run_experiments_with_dedicated_pi0_servers_and_one_expe
     experiment_output_script_file = _task_file(experiment_output_task, _REMOTE_BUILD_EXPERIMENT_OUTPUT_SCRIPT_PATH)
     assert "localpath" not in experiment_output_script_file
     assert "def build_experiment_output" in experiment_output_script_file["contents"]
+    assert EXPERIMENT_RUNNER_RESULT_FILE_NAME in experiment_output_script_file["contents"]
     experiment_output_command = _task_file(experiment_output_task, "/tmp/entry.sh")["contents"]
     assert experiment_output_command.startswith("set -euo pipefail")
     assert _REMOTE_BUILD_EXPERIMENT_OUTPUT_SCRIPT_PATH in experiment_output_command
@@ -362,6 +380,23 @@ def test_embeds_effective_experiment_yaml():
     assert embedded_experiment["runs"]["baseline"]["environment"]["type"] == "pick_and_place_maple_table"
     assert embedded_experiment["runs"]["baseline"]["policy"]["type"] == "zero_action"
     assert embedded_experiment["runs"]["baseline"]["environment_builder"]["num_envs"] == 1
+
+
+def test_result_wrapper_preserves_experiment_video_options():
+    """Pass selected video options through the result-recording wrapper."""
+    experiment_runner_task = ExperimentRunnerTask(
+        task_cfg=ExperimentRunnerTaskCfg(record_camera_video=False, record_viewport_video=True),
+        experiment_cfg=_zero_action_experiment_cfg(),
+        lead=True,
+        task_name="experiment-runner",
+    )
+
+    experiment_runner_command = _task_file(experiment_runner_task.create_task_dict(), "/tmp/entry.sh")["contents"]
+
+    assert "--record_camera_video" not in experiment_runner_command
+    assert "--record_viewport_video" in experiment_runner_command
+    assert experiment_runner_command.startswith("# Record the application result without failing the OSMO task")
+    assert experiment_runner_command.endswith("exit 0\n")
 
 
 def test_all_local_experiment_runs_standalone_without_servers():
