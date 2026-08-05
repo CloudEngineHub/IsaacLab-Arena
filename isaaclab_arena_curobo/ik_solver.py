@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 import torch
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from curobo.geom.types import WorldConfig
 from curobo.types.base import TensorDeviceType
@@ -19,8 +21,10 @@ from curobo.wrap.reacher.ik_solver import IKSolver, IKSolverConfig
 from isaaclab_arena.utils.device import resolve_cuda_device
 from isaaclab_arena_curobo.curobo_embodiment_cfg import CuroboEmbodimentCfg
 from isaaclab_arena_curobo.embodiment_curobo_registry import get_embodiment_curobo_cfg
-from isaaclab_arena_curobo.utils.ik_solver_utils import AABBCollisionCuboid, world_config_from_cuboids
 from isaaclab_arena_curobo.utils.robot_cfg_utils import load_patched_robot_yaml
+
+if TYPE_CHECKING:
+    from isaaclab_arena_curobo.utils.ik_solver_utils import AABBCollisionCuboid
 
 
 class CuroboIKSolver:
@@ -28,8 +32,8 @@ class CuroboIKSolver:
 
     Constructs a cuRobo solver from an embodiment's registered cuRobo config on an explicit CUDA
     device, holds a bounding-box collision world, and answers per-pose IK feasibility via a single
-    batched solve. Feasibility is pose reachability (position/rotation convergence) only; the
-    collision-free check is not wired up yet (see ``solve_ik_feasibility``'s ``require_collision_free``).
+    batched solve. Feasibility is pose reachability (position/rotation convergence), optionally also
+    collision-freeness against that world (see ``solve_ik_feasibility``'s ``require_collision_free``).
     """
 
     # Note(xinjieyao, 2026-07-23): When validating params like EventTermCfg.params, Isaac Lab's configclass recursively
@@ -43,7 +47,8 @@ class CuroboIKSolver:
     #     tensor_args: The tensor arguments for the solver.
     #     robot_cfg: The curobo robot configuration for the solver.
     #     ik_solver: The IK solver for the solver.
-    __slots__ = ("logger", "device", "tensor_args", "robot_cfg", "ik_solver")
+    #     hand_link_names: The robot's hand links, muted during a collision-free solve.
+    __slots__ = ("logger", "device", "tensor_args", "robot_cfg", "ik_solver", "hand_link_names")
 
     def __init__(
         self,
@@ -79,6 +84,7 @@ class CuroboIKSolver:
         collision_cache = collision_cache_size or {"obb": 150, "mesh": 150}
 
         self.robot_cfg = load_patched_robot_yaml(curobo_cfg)["robot_cfg"]
+        self.hand_link_names = list(curobo_cfg.hand_link_names)
         # Start with an empty collision world; update_world() fills it per layout.
         world_cfg = WorldConfig(cuboid=[])
 
@@ -147,7 +153,27 @@ class CuroboIKSolver:
         moving obstacle poses, so this handles both moved objects and a changed object set per layout,
         as long as the obstacle count stays within the collision cache.
         """
+        # Imported here because ik_solver_utils imports IKFeasibility from this module.
+        from isaaclab_arena_curobo.utils.ik_solver_utils import world_config_from_cuboids
+
         world_cfg = world_config_from_cuboids(cuboids, robot_base_pos_w, robot_base_quat_w_xyzw, self.device)
         self.ik_solver.update_world(world_cfg)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
+
+
+@dataclass
+class IKFeasibility:
+    """One batched IK solver's solved results."""
+
+    feasible: torch.Tensor
+    """Per-pose verdict: converged within the thresholds, and collision-free when that was required."""
+
+    position_error: torch.Tensor
+    """Per-pose IK position error (m) of the returned solution."""
+
+    rotation_error: torch.Tensor
+    """Per-pose IK rotation error (rad) of the returned solution."""
+
+    joint_positions: torch.Tensor
+    """Joint configuration solved per pose, of length joint_dim of the robot."""

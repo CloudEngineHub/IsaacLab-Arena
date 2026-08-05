@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import torch
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -17,6 +19,7 @@ from curobo.geom.types import Cuboid, WorldConfig
 from isaaclab_arena.assets.object_base import ObjectBase
 from isaaclab_arena.utils.device import resolve_cuda_device
 from isaaclab_arena.utils.pose import Pose
+from isaaclab_arena_curobo.ik_solver import IKFeasibility
 from isaaclab_arena_curobo.utils.frame_utils import world_pose_to_robot_frame
 
 if TYPE_CHECKING:
@@ -24,18 +27,6 @@ if TYPE_CHECKING:
     from isaaclab_mimic.motion_planners.curobo.curobo_planner import CuroboPlanner
 
     from isaaclab_arena_curobo.ik_solver import CuroboIKSolver
-
-
-def resolve_ik_solver(ik_solver_context: CuroboIKSolver | CuroboPlanner) -> IKSolver:
-    """Get the cuRobo ``IKSolver`` from a host, whichever way it exposes it.
-
-    ``CuroboIKSolver`` holds it as ``ik_solver``; the upstream ``CuroboPlanner`` (not ours to change)
-    holds it as ``motion_gen.ik_solver``. Centralizing the lookup lets the solve take just the host.
-    """
-    ik_solver = getattr(ik_solver_context, "ik_solver", None)
-    if ik_solver is None:
-        ik_solver = ik_solver_context.motion_gen.ik_solver
-    return ik_solver
 
 
 @dataclass
@@ -108,7 +99,7 @@ def solve_ik_feasibility(
     position_threshold: float = 0.01,
     rotation_threshold: float = 0.1,
     require_collision_free: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> IKFeasibility:
     """Batched IK feasibility of all ``target_poses`` against a cuRobo IK solver. Shared between sim-free and env-coupled paths.
     Runs a single ``solve_batch`` for one layout.
 
@@ -118,15 +109,13 @@ def solve_ik_feasibility(
         seed_config: Optional joint seed tensor.
         position_threshold: Max position error (m) to count as feasible.
         rotation_threshold: Max rotation error (rad) to count as feasible.
-        require_collision_free: Also require a collision-free joint solution (cuRobo ``success``), not
-            just pose convergence. The caller must first exclude the grasped object's own contact --
-            e.g. disable the hand-link spheres -- or the gripper over its target reads as a collision.
+        require_collision_free: Also require a collision-free joint solution, not just pose convergence.
 
     Returns:
-        ``(feasible, position_error, rotation_error)``, each length ``b`` and aligned with the input;
-        errors are the best-seed values per pose.
+        An ``IKFeasibility`` holding the per-pose verdict, position/rotation errors, and the joint
+        configuration solved per pose.
     """
-    ik_solver = resolve_ik_solver(ik_solver_context)
+    ik_solver = _resolve_ik_solver(ik_solver_context)
     target_poses = ik_solver_context._to_curobo_device(target_poses)
     positions, rotations = math_utils.unmake_pose(target_poses)
     goal_pose = ik_solver_context._make_pose(
@@ -141,15 +130,16 @@ def solve_ik_feasibility(
         while ik_seed.dim() < 3:
             ik_seed = ik_seed.unsqueeze(0)
 
-    ik_result = ik_solver.solve_batch(goal_pose, seed_config=ik_seed)
+    # The gripper is meant to touch what it grasps, so its own links are disabled to detect collisions with the grasped object.
+    muted_links = _resolve_hand_link_names(ik_solver_context) if require_collision_free else []
+    with _disabled_link_spheres(ik_solver, muted_links):
+        ik_result = ik_solver.solve_batch(goal_pose, seed_config=ik_seed)
 
     num_poses = positions.shape[0]
     pos_err = ik_result.position_error.view(num_poses, -1)
     rot_err = ik_result.rotation_error.view(num_poses, -1)
 
     ok = (pos_err < position_threshold) & (rot_err < rotation_threshold)
-    # TODO(xinjieyao, 2026-07-15): Support collision-free IK by disabling the hand-link spheres during collision checking
-    assert require_collision_free is False, "Collision-free IK is not supported yet. Needs extra machinery."
     if require_collision_free:
         # cuRobo folds collision-free-ness into ``success`` (success = converged AND feasible).
         ok = ok & ik_result.success.view(num_poses, -1).bool()
@@ -159,6 +149,90 @@ def solve_ik_feasibility(
     best_idx = pos_err.argmin(dim=1, keepdim=True)
     best_pos_err = pos_err.gather(1, best_idx).squeeze(1)
     best_rot_err = rot_err.gather(1, best_idx).squeeze(1)
+    solutions = ik_result.solution.view(num_poses, pos_err.shape[1], -1)
+    best_solution = solutions.gather(1, best_idx.unsqueeze(-1).expand(-1, -1, solutions.shape[-1])).squeeze(1)
 
     ik_solver_context.logger.debug(f"Batch IK feasibility: {int(feasible.sum().item())}/{num_poses} feasible")
-    return feasible, best_pos_err, best_rot_err
+    return IKFeasibility(feasible, best_pos_err, best_rot_err, best_solution)
+
+
+def hand_sphere_mask(ik_solver_context: CuroboIKSolver | CuroboPlanner) -> torch.Tensor:
+    """Mask over the robot's collision spheres selecting the hand links.
+
+    Args:
+        ik_solver_context: The host that owns the solver and names the embodiment's hand links.
+
+    Returns:
+        ``(num_spheres,)`` bool tensor aligned with the spheres ``robot_collision_spheres`` returns.
+    """
+    kinematics_config = _resolve_ik_solver(ik_solver_context).kinematics.kinematics_config
+    sphere_link_indices = kinematics_config.link_sphere_idx_map
+    mask = torch.zeros(sphere_link_indices.shape[0], dtype=torch.bool, device=sphere_link_indices.device)
+    for name in _resolve_hand_link_names(ik_solver_context):
+        mask[kinematics_config.get_sphere_index_from_link_name(name)] = True
+    return mask
+
+
+def robot_collision_spheres(
+    ik_solver_context: CuroboIKSolver | CuroboPlanner, joint_positions: torch.Tensor
+) -> torch.Tensor:
+    """Forward-kinematics the robot's collision spheres at each given joint configuration. Curobo collision-checks use these spheres.
+
+    Args:
+        ik_solver_context: The host that owns the solver and supplies device plumbing.
+        joint_positions: shape of (b, dof), b:number of poses, dof:number of joints.
+
+    Returns:
+        shape of (b, num_spheres, 4), b:number of poses, 4:x, y, z, radius; cuRobo leaves unused
+        spheres in with a negative radius.
+    """
+    ik_solver = _resolve_ik_solver(ik_solver_context)
+    joint_positions = ik_solver_context._to_curobo_device(joint_positions)
+    return ik_solver.kinematics.get_state(joint_positions).link_spheres_tensor
+
+
+def _resolve_ik_solver(ik_solver_context: CuroboIKSolver | CuroboPlanner) -> IKSolver:
+    """Get the cuRobo ``IKSolver`` from a host, whichever way it exposes it.
+
+    ``CuroboIKSolver`` holds it as ``ik_solver``; the upstream ``CuroboPlanner`` (not ours to change)
+    holds it as ``motion_gen.ik_solver``. Centralizing the lookup lets the solve take just the host.
+    """
+    ik_solver = getattr(ik_solver_context, "ik_solver", None)
+    if ik_solver is None:
+        ik_solver = ik_solver_context.motion_gen.ik_solver
+    return ik_solver
+
+
+def _resolve_hand_link_names(ik_solver_context: CuroboIKSolver | CuroboPlanner) -> list[str]:
+    """Get the embodiment's hand link names from a host, whichever way it exposes them."""
+    hand_link_names = getattr(ik_solver_context, "hand_link_names", None)
+    if hand_link_names is None:
+        # CuroboPlanner holds them on its config.
+        hand_link_names = ik_solver_context.config.hand_link_names
+    return list(hand_link_names)
+
+
+@contextmanager
+def _disabled_link_spheres(ik_solver: IKSolver, link_names: Sequence[str]) -> Iterator[None]:
+    """Mute the collision spheres of given links for the duration of the block, then restore them.
+
+    Args:
+        ik_solver: The cuRobo IK solver whose kinematics carry the spheres.
+        link_names: Links to mute; an empty sequence makes the block a no-op.
+    """
+    kinematics_config = ik_solver.kinematics.kinematics_config
+    for name in link_names:
+        assert name in kinematics_config.link_name_to_idx_map, (
+            f"Link '{name}' has no collision spheres in this robot config. "
+            f"Known: {sorted(kinematics_config.link_name_to_idx_map)}."
+        )
+    # save the spheres to restore them later as all edits are in place
+    saved_spheres = {name: kinematics_config.get_link_spheres(name).clone() for name in link_names}
+    for name in link_names:
+        kinematics_config.disable_link_spheres(name)
+    try:
+        yield
+    # restore the spheres because they are edited in place on the solver's shared kinematics
+    finally:
+        for name, spheres in saved_spheres.items():
+            kinematics_config.update_link_spheres(name, spheres)

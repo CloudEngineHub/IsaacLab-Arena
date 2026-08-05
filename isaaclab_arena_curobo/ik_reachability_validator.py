@@ -7,6 +7,9 @@
 
 The pool's solve loop calls it on each geometry-valid candidate; a candidate is stored only when the robot can reach a
 top-down grasp at every movable object, so the loop keeps solving (reject-&-refill) until every env has enough reachable layouts.
+
+With the placement debug view on (``ObjectPlacerParams.debug_visualize``), the check also draws what it solved for each
+candidate -- the robot base, the grasps, their IK errors; see ``isaaclab_arena_curobo.reachability_visualizer``.
 """
 
 from __future__ import annotations
@@ -24,7 +27,12 @@ from isaaclab_arena.utils.yaw import rotate_quat_by_yaw, yaw_from_quat_xyzw
 from isaaclab_arena_curobo.embodiment_curobo_registry import get_embodiment_curobo_cfg
 from isaaclab_arena_curobo.ik_solver import CuroboIKSolver
 from isaaclab_arena_curobo.utils.frame_utils import top_down_grasp_pose_from_world_poses
-from isaaclab_arena_curobo.utils.ik_solver_utils import get_aabb_collision_cuboid_for_object, solve_ik_feasibility
+from isaaclab_arena_curobo.utils.ik_solver_utils import (
+    get_aabb_collision_cuboid_for_object,
+    hand_sphere_mask,
+    robot_collision_spheres,
+    solve_ik_feasibility,
+)
 
 if TYPE_CHECKING:
     from isaaclab_arena.assets.object_base import ObjectBase
@@ -56,7 +64,6 @@ def get_object_world_pose_from_layout(
 @register_validator
 class ReachabilityValidator(PlacementValidator):
     """Build-time placement gate: the robot can reach a top-down grasp at the target objects (cuRobo IK).
-
     Can be delisted (see ``is_available``) when the params carry no embodiment with a registered cuRobo config.
     """
 
@@ -69,6 +76,7 @@ class ReachabilityValidator(PlacementValidator):
         self._grasp_z_offset = config.grasp_z_offset_m
         self._ik_pos_threshold = config.ik_position_threshold_m
         self._ik_rot_threshold = config.ik_rotation_threshold_rad
+        self._require_collision_free = config.require_collision_free
         self._solver = CuroboIKSolver(
             get_embodiment_curobo_cfg(config.embodiment),
             position_threshold=self._ik_pos_threshold,
@@ -121,9 +129,10 @@ class ReachabilityValidator(PlacementValidator):
     ) -> bool:
         """Whether the robot can reach a top-down grasp at the target objects in one candidate layout.
 
-        Rebuilds each object's world pose and a per-object collision cuboid, syncs them into the solver's
-        world, then batches a single IK solve over the target objects' top-down grasps. A layout with
-        nothing to grasp (anchor-only, or no target present) is trivially reachable.
+        Rebuilds each object's world pose, syncs a collision cuboid per non-target object into the solver's
+        world -- what makes those objects block a grasp when collision checking is on -- then batches a
+        single IK solve over the target objects' top-down grasps. A layout with nothing to grasp
+        (anchor-only, or no target present) is trivially reachable.
 
         Args:
             positions: Solved (x, y, z) per object.
@@ -137,14 +146,16 @@ class ReachabilityValidator(PlacementValidator):
         world_poses = {
             obj: get_object_world_pose_from_layout(positions, orientations, obj, base_rotations) for obj in objects
         }
+        # non-anchor objects with a RequiresReachability relation
+        targets = self._select_reachability_targets(objects, anchors)
+        # A target is not an obstacle to its own grasp, but everything else in the layout is.
         cuboids = [
             get_aabb_collision_cuboid_for_object(obj, world_poses[obj].position_xyz, world_poses[obj].rotation_xyzw)
             for obj in objects
+            if obj not in targets
         ]
         self._solver.update_world(cuboids, self._robot_base_pos_w, self._robot_base_quat_w_xyzw)
 
-        # non-anchor objects with a RequiresReachability relation
-        targets = self._select_reachability_targets(objects, anchors)
         if not targets:
             # The check is enabled but no movable object is stamped as a reachability target, so it passes every
             # layout trivially.
@@ -167,11 +178,12 @@ class ReachabilityValidator(PlacementValidator):
             )
             for obj in targets
         ])
-        feasible, position_error, rotation_error = solve_ik_feasibility(
+        ik = solve_ik_feasibility(
             self._solver,
             grasp_poses,
             position_threshold=self._ik_pos_threshold,
             rotation_threshold=self._ik_rot_threshold,
+            require_collision_free=self._require_collision_free,
         )
         if self._rerun_layer is not None:
             layout_index_across_batch = self._visualizer.get_layout_index_across_batch(layout_index_within_batch)
@@ -181,11 +193,14 @@ class ReachabilityValidator(PlacementValidator):
                 robot_base_quat_w_xyzw=self._robot_base_quat_w_xyzw,
                 target_names=[obj.name for obj in targets],
                 grasp_poses_base_frame=grasp_poses,
-                feasible=feasible,
-                position_error=position_error,
-                rotation_error=rotation_error,
+                feasible=ik.feasible,
+                position_error=ik.position_error,
+                rotation_error=ik.rotation_error,
+                # The pose the arm ended up in is what explains a rejection, so it is drawn alongside it.
+                robot_spheres=robot_collision_spheres(self._solver, ik.joint_positions),
+                muted_sphere_mask=hand_sphere_mask(self._solver) if self._require_collision_free else None,
             )
-        return bool(feasible.all().item())
+        return bool(ik.feasible.all().item())
 
     def _select_reachability_targets(self, objects: list[ObjectBase], anchors: set[ObjectBase]) -> list[ObjectBase]:
         """Movable objects the task marked as reachability targets (carry a RequiresReachability relation)."""
