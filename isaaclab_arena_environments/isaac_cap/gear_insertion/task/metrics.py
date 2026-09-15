@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import numpy as np
 import torch
+from dataclasses import MISSING
 
 from isaaclab.managers.recorder_manager import RecorderTerm, RecorderTermCfg
 from isaaclab.utils.configclass import configclass
@@ -19,18 +20,41 @@ from isaaclab_arena.metrics.metric_term_cfg import MetricTermCfg
 
 logger = logging.getLogger(__name__)
 
+_GEAR_GATE_NAMES = ("xy", "z", "upright", "support", "velocity")
 
-def _terminal_diagnostics(success_term, env_ids) -> list[dict[str, object]]:
-    names = [cfg.name for cfg in success_term.gear_asset_cfgs]
-    per_gear = success_term.success_per_gear[env_ids].tolist()
-    diagnostics = {name: values[env_ids].tolist() for name, values in success_term.diagnostics_per_gear.items()}
+
+def _terminal_diagnostics(success_term, env_ids, gear_names: tuple[str, ...]) -> list[dict[str, dict[str, bool]]]:
+    """Build per-episode completion and gate diagnostics for each gear."""
+
+    assert success_term.results.ndim == 2, "Gear insertion success results must have shape (num_gears, num_envs)."
+    assert success_term.results.shape[0] == len(gear_names), (
+        f"Gear insertion success exposes {success_term.results.shape[0]} gears, but {len(gear_names)} names were"
+        " provided."
+    )
+    assert len(success_term.predicates) == len(gear_names), (
+        f"Gear insertion success configures {len(success_term.predicates)} gear predicates, but "
+        f"{len(gear_names)} names were provided."
+    )
+
+    per_gear_completion = success_term.results[:, env_ids].transpose(0, 1).tolist()
+    per_gear_gates = []
+    for predicate_cfg in success_term.predicates:
+        gear_predicate = predicate_cfg.func
+        assert hasattr(gear_predicate, "results"), "Gear insertion child predicate does not expose gate results."
+        assert gear_predicate.results.ndim == 2, "Gear gate results must have shape (num_gates, num_envs)."
+        assert gear_predicate.results.shape == (len(_GEAR_GATE_NAMES), success_term.results.shape[1]), (
+            f"Gear gate results have shape {tuple(gear_predicate.results.shape)}; expected "
+            f"({len(_GEAR_GATE_NAMES)}, {success_term.results.shape[1]})."
+        )
+        per_gear_gates.append(gear_predicate.results[:, env_ids].transpose(0, 1).tolist())
+
     episodes = []
-    for env_index, completion in enumerate(per_gear):
+    for env_index, completion in enumerate(per_gear_completion):
         episode = {}
-        for gear_index, gear_name in enumerate(names):
+        for gear_index, gear_name in enumerate(gear_names):
             episode[gear_name] = {
                 "success": bool(completion[gear_index]),
-                **{name: values[env_index][gear_index] for name, values in diagnostics.items()},
+                **dict(zip(_GEAR_GATE_NAMES, per_gear_gates[gear_index][env_index], strict=True)),
             }
         episodes.append(episode)
     return episodes
@@ -42,6 +66,7 @@ class GearInsertionFractionRecorder(RecorderTerm):
     def __init__(self, cfg, env):
         super().__init__(cfg, env)
         self.name = cfg.name
+        self.gear_names = tuple(cfg.gear_names)
         self.first_reset = True
 
     def record_pre_reset(self, env_ids):
@@ -51,12 +76,16 @@ class GearInsertionFractionRecorder(RecorderTerm):
             return None, None
 
         success_term = self._env.termination_manager.get_term_cfg("success").func
-        if not hasattr(success_term, "success_per_gear"):
+        if not hasattr(success_term, "results"):
             raise TypeError("gear insertion success term does not expose per-gear completion")
-        per_gear = success_term.success_per_gear[env_ids]
+        per_gear = success_term.results[:, env_ids].transpose(0, 1)
+        assert per_gear.ndim == 2 and per_gear.shape[1] == len(self.gear_names), (
+            f"Gear completion results have shape {tuple(per_gear.shape)}; expected "
+            f"(num_episodes, {len(self.gear_names)})."
+        )
         logger.warning(
             "terminal per-gear diagnostics: %s",
-            _terminal_diagnostics(success_term, env_ids),
+            _terminal_diagnostics(success_term, env_ids, self.gear_names),
         )
         fractions = per_gear.to(torch.float32).mean(dim=-1)
         return self.name, fractions
@@ -66,6 +95,7 @@ class GearInsertionFractionRecorder(RecorderTerm):
 class GearInsertionFractionRecorderCfg(RecorderTermCfg):
     class_type: type[RecorderTerm] = GearInsertionFractionRecorder
     name: str = "gear_insertion_fraction"
+    gear_names: tuple[str, ...] = MISSING
 
 
 def compute_gear_insertion_fraction(recorded_metric_data: list[np.ndarray]) -> float:
@@ -85,8 +115,11 @@ class GearInsertionFractionMetric(MetricBase):
     name = "gear_insertion_fraction"
     recorder_term_name = "gear_insertion_fraction"
 
+    def __init__(self, gear_names: tuple[str, ...]):
+        self.gear_names = gear_names
+
     def get_recorder_term_cfg(self) -> RecorderTermCfg:
-        return GearInsertionFractionRecorderCfg(name=self.recorder_term_name)
+        return GearInsertionFractionRecorderCfg(name=self.recorder_term_name, gear_names=self.gear_names)
 
     def get_metric_term_cfg(self) -> MetricTermCfg:
         return MetricTermCfg(

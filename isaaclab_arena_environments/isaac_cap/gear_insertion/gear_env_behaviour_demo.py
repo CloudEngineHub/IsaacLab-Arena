@@ -122,9 +122,10 @@ class GearEnvBehaviourDemo(EnvBehaviourDemo):
 
         success_cfg = self.base_env.termination_manager.get_term_cfg("success")
         self.success_term = success_cfg.func
-        self.plate_name = success_cfg.params["plate_asset_cfg"].name
-        self.gear_names = tuple(cfg.name for cfg in success_cfg.params["gear_asset_cfgs"])
-        self.target_offsets_xyz = tuple(success_cfg.params["target_offsets_xyz"])
+        task = self.arena_environment.task
+        self.plate_name = task.plate.name
+        self.gear_names = tuple(gear.name for gear in task.gears)
+        self.target_offsets_xyz = task.target_offsets_xyz
 
     def _ee_position(self):
         return self.robot.data.body_pos_w.torch[:, self.ee_body_id].clone()
@@ -274,7 +275,10 @@ class GearEnvBehaviourDemo(EnvBehaviourDemo):
                     )
                     return
 
-        diagnostics = {name: values.tolist() for name, values in self.success_term.diagnostics_per_gear.items()}
+        diagnostics = {
+            gear_name: self.success_term.results[gear_index].tolist()
+            for gear_index, gear_name in enumerate(self.gear_names)
+        }
         raise RuntimeError(f"Final placement did not trigger the environment reset: {diagnostics}")
 
 
