@@ -88,6 +88,14 @@ class EnvBehaviourDemo(ABC):
             self._rate_limiter.sleep()
         return transition
 
+    def render(self) -> None:
+        """Render the current state without advancing the environment."""
+        if not self.is_running():
+            raise KeyboardInterrupt
+        self.base_env.sim.render()
+        if self._rate_limiter is not None:
+            self._rate_limiter.sleep()
+
     def run_demo(self, cycles: int = 0) -> None:
         """Build the environment and run cycles until completion or simulation shutdown.
 

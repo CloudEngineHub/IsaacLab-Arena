@@ -33,7 +33,9 @@ def register_components() -> None:
     try:
         asset_registry = AssetRegistry()
         _register_insertion_task_embodiments(asset_registry)
+        _register_cable_routing_embodiment(asset_registry)
         _register_gear_insertion_components(asset_registry)
+        _register_cable_routing_components()
         _registered = True
     finally:
         _registering = False
@@ -51,6 +53,37 @@ def _register_insertion_task_embodiments(asset_registry: AssetRegistry) -> None:
         IndustrialFr3Robotiq2f85DifferentialIKEmbodiment,
     ):
         _register(asset_registry, embodiment_class, embodiment_class.name)
+
+
+def _register_cable_routing_embodiment(asset_registry: AssetRegistry) -> None:
+    """Register the bimanual YAM embodiment used for cable routing."""
+    from .embodiments.cable_routing import IndustrialBimanualYamEmbodiment
+
+    _register(asset_registry, IndustrialBimanualYamEmbodiment, IndustrialBimanualYamEmbodiment.name)
+
+
+def _register_cable_routing_components() -> None:
+    """Register the cable-routing task and environments."""
+    from .cable_routing.environment import (
+        CableRoutingEasyEnvironment,
+        CableRoutingEasyEnvironmentCfg,
+        CableRoutingMediumEnvironment,
+        CableRoutingMediumEnvironmentCfg,
+    )
+    from .cable_routing.task import CableRoutingTask
+
+    _register(TaskRegistry(), CableRoutingTask, CableRoutingTask.__name__)
+
+    environment_registry = EnvironmentRegistry()
+    for factory, cfg_type in (
+        (CableRoutingMediumEnvironment, CableRoutingMediumEnvironmentCfg),
+        (CableRoutingEasyEnvironment, CableRoutingEasyEnvironmentCfg),
+    ):
+        if environment_registry.is_registered(factory.name, ensure_loaded=False):
+            existing = environment_registry.get_component_by_name(factory.name)
+            assert existing is factory, f"Conflicting Isaac Cap environment {factory.name!r}."
+            continue
+        environment_registry.register_environment(factory, cfg_type)
 
 
 def _register_gear_insertion_components(asset_registry: AssetRegistry) -> None:
