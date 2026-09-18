@@ -246,3 +246,36 @@ def test_direction_variation_lights_injected_directional_light():
 
     result = run_function_with_persistent_simulation_app(_test_direction_variation_lights_injected_directional_light)
     assert result
+
+
+def _test_graph_parses_asset_poses(simulation_app):
+    from isaaclab_arena.assets.registries import AssetRegistry
+    from isaaclab_arena.utils.pose import Pose
+    from isaaclab_arena_environments import isaac_cap
+
+    isaac_cap.register_components()
+    spec = ArenaEnvGraphSpec.from_yaml(Path(isaac_cap.__file__).parent / "gear_insertion/gear_medium.yaml")
+    posed_objects = [obj for obj in spec.objects if obj.registry_name != "empty_warehouse_dome_light"]
+    for obj in posed_objects:
+        obj.params["initial_pose"] = {"position_xyz": [0.1, 0.2, 0.8]}
+    serialized = spec.to_dict()
+    arena_env = spec.to_arena_env()
+
+    # Every constructor receives Pose, while the reusable graph retains YAML mappings.
+    assert isinstance(arena_env.embodiment.get_initial_pose(), Pose)
+    assert isinstance(arena_env.scene.assets["fr3_workcell_table"].get_initial_pose(), Pose)
+    for obj in posed_objects:
+        asset = arena_env.scene.assets[obj.id]
+        expected = Pose(position_xyz=(0.1, 0.2, 0.8))
+        assert asset.get_initial_pose() == expected
+        assert obj.resolve_usd_path() == asset.usd_path
+        direct = AssetRegistry().get_asset_by_name(obj.registry_name)(initial_pose=expected)
+        assert direct.get_initial_pose() == expected
+    assert spec.to_dict() == serialized
+    return True
+
+
+def test_graph_parses_asset_poses():
+    from isaaclab_arena.tests.utils.persistent_simulation_app import run_function_with_persistent_simulation_app
+
+    assert run_function_with_persistent_simulation_app(_test_graph_parses_asset_poses)

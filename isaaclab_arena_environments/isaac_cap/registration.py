@@ -36,6 +36,7 @@ def register_components() -> None:
         _register_cable_routing_embodiment(asset_registry)
         _register_gear_insertion_components(asset_registry)
         _register_cable_routing_components()
+        _register_syringe_sort_components(asset_registry)
         _registered = True
     finally:
         _registering = False
@@ -106,3 +107,32 @@ def _register_gear_insertion_components(asset_registry: AssetRegistry) -> None:
         _register(asset_registry, asset_class, asset_class.name)
 
     _register(TaskRegistry(), GearInsertionTask, GearInsertionTask.__name__)
+
+
+def _register_syringe_sort_components(asset_registry: AssetRegistry) -> None:
+    """Register the syringe assets, success task, and environment."""
+    from . import cap_policy  # noqa: F401
+    from .syringe_sort.environments.assets import InstrumentTray, SharpsContainer, SyringeRedCap, SyringeWhiteCap
+    from .syringe_sort.environments.environment import (
+        SyringeBothEnvironment,
+        SyringeBothEnvironmentCfg,
+        SyringeClutteredEnvironment,
+        SyringeClutteredEnvironmentCfg,
+        SyringeSingleEnvironment,
+        SyringeSortEnvironmentCfg,
+    )
+    from .syringe_sort.tasks.task import SyringeSortTask
+
+    for asset_class in (SyringeRedCap, SyringeWhiteCap, InstrumentTray, SharpsContainer):
+        _register(asset_registry, asset_class, asset_class.name)
+    _register(TaskRegistry(), SyringeSortTask, SyringeSortTask.__name__)
+    environment_registry = EnvironmentRegistry()
+    for factory, cfg in (
+        (SyringeSingleEnvironment, SyringeSortEnvironmentCfg),
+        (SyringeBothEnvironment, SyringeBothEnvironmentCfg),
+        (SyringeClutteredEnvironment, SyringeClutteredEnvironmentCfg),
+    ):
+        if environment_registry.is_registered(factory.name, ensure_loaded=False):
+            assert environment_registry.get_component_by_name(factory.name) is factory
+        else:
+            environment_registry.register_environment(factory, cfg)
