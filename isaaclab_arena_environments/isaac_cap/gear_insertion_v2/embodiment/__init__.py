@@ -12,6 +12,7 @@ from typing import ClassVar
 
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
 from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
+from isaaclab_arena.embodiments.gripper import RobotiqGripper
 from isaaclab_arena.utils.pose import Pose
 from isaaclab_arena.variations.camera_extrinsics_variation import CameraExtrinsicsVariation
 
@@ -20,6 +21,9 @@ from .cameras import IndustrialFr3RobotiqCameraCfg
 from .config import (
     _ROBOT_ON_CART_INSTANCEABLE_USD_PATH,
     _ROBOT_ON_CART_USD_PATH,
+    END_EFFECTOR_BODY_NAME,
+    END_EFFECTOR_POINT_OFFSET_XYZ,
+    GRIPPER_JOINT_NAME,
     IndustrialFr3RobotiqEventCfg,
     IndustrialFr3RobotiqObservationsCfg,
     IndustrialFr3RobotiqSceneCfg,
@@ -47,6 +51,11 @@ class _IndustrialFr3Robotiq2f85Base(EmbodimentBase):
             _normalize_initial_pose(initial_pose),
             concatenate_observation_terms,
             arm_mode,
+        )
+        self.gripper = RobotiqGripper(
+            driver_joint_name=GRIPPER_JOINT_NAME,
+            body_name=END_EFFECTOR_BODY_NAME,
+            body_point_offset_xyz=END_EFFECTOR_POINT_OFFSET_XYZ,
         )
         self.scene_config = IndustrialFr3RobotiqSceneCfg()
         self.action_config = self.action_config_type()

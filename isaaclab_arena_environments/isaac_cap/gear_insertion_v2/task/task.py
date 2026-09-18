@@ -16,6 +16,7 @@ from isaaclab.managers import EventTermCfg, SceneEntityCfg, TerminationTermCfg
 from isaaclab.utils.configclass import configclass
 
 from isaaclab_arena.assets.asset import Asset
+from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
@@ -33,6 +34,11 @@ from isaaclab_arena.tasks.terminations import SuccessMode
 from .metrics import GearInsertionFractionMetric
 from .predicates import GearIsSupported
 from .terminations import gear_mesh_success
+
+
+def _gear_outer_diameter_m(gear_teeth: int) -> float:
+    """Return gear outer diameter for the task's 2.5 mm module."""
+    return 0.0025 * (gear_teeth + 2)
 
 
 @configclass
@@ -54,6 +60,8 @@ class GearMeshTask(TaskBase):
         gears: list[Asset] | None = None,
         gear_teeth: int = 20,
         target_offsets_xyz: Sequence[Sequence[float]] | None = None,
+        grasp_width_m: float | None = None,
+        release_clearance_m: float = 0.005,
         episode_length_s: float = 100.0,
         task_description: str | None = None,
     ) -> None:
@@ -67,6 +75,10 @@ class GearMeshTask(TaskBase):
         )
         if len(offsets) != len(gear_assets) or any(len(offset) != 3 for offset in offsets):
             raise ValueError("gear mesh requires one 3D station offset per gear")
+        if grasp_width_m is not None and (not math.isfinite(grasp_width_m) or grasp_width_m <= 0.0):
+            raise ValueError("grasp_width_m must be a positive finite number")
+        if not math.isfinite(release_clearance_m) or release_clearance_m < 0.0:
+            raise ValueError("release_clearance_m must be a non-negative finite number")
         teeth = tuple(int(gear_teeth) for _ in gear_assets)
 
         super().__init__(
@@ -77,15 +89,15 @@ class GearMeshTask(TaskBase):
         self.board = board
         self.gears = gear_assets
         self.gear = gear_assets[0]
+        self._grasp_width_override_m = grasp_width_m
         self.events_cfg = EventsCfg()
         self._success_cfg = TerminationTermCfg(
             func=gear_mesh_success,
             params={
                 "board_asset_cfg": SceneEntityCfg(board.name),
                 "gear_asset_cfgs": [SceneEntityCfg(asset.name) for asset in gear_assets],
-                "robot_asset_cfg": SceneEntityCfg("robot"),
-                "tcp_body_name": "robotiq_base",
-                "tcp_offset_xyz": (0.0, 0.0, 0.157),
+                "grasp_width_m": grasp_width_m if grasp_width_m is not None else _gear_outer_diameter_m(gear_teeth),
+                "release_clearance_m": release_clearance_m,
                 "target_offsets_xyz": offsets,
                 "button_latch_m": 0.005,
                 "drive_speed_rad_s": 4.0,
@@ -97,6 +109,10 @@ class GearMeshTask(TaskBase):
                 "hold_time_s": 1.0,
             },
         )
+
+    def configure_for_embodiment(self, embodiment: EmbodimentBase) -> None:
+        """Configure release checks to use the embodiment's gripper."""
+        self._success_cfg.params["gripper"] = embodiment.get_gripper()
 
     def set_gear_teeth(self, gear_teeth: int) -> None:
         """Update the expected driven speed for the selected asset family."""
@@ -121,6 +137,8 @@ class GearMeshTask(TaskBase):
             raise ValueError("gear-mesh station offsets must be 3D")
         self._success_cfg.params["gear_teeth"] = teeth
         self._success_cfg.params["target_offsets_xyz"] = offsets
+        if self._grasp_width_override_m is None:
+            self._success_cfg.params["grasp_width_m"] = max(_gear_outer_diameter_m(value) for value in teeth)
 
     def get_scene_cfg(self) -> Any:
         return None
