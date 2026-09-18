@@ -23,28 +23,28 @@ logger = logging.getLogger(__name__)
 _GEAR_GATE_NAMES = ("xy", "z", "upright", "support", "velocity")
 
 
-def _terminal_diagnostics(success_term, env_ids, gear_names: tuple[str, ...]) -> list[dict[str, dict[str, bool]]]:
+def _terminal_diagnostics(success_predicate, env_ids, gear_names: tuple[str, ...]) -> list[dict[str, dict[str, bool]]]:
     """Build per-episode completion and gate diagnostics for each gear."""
 
-    assert success_term.results.ndim == 2, "Gear insertion success results must have shape (num_gears, num_envs)."
-    assert success_term.results.shape[0] == len(gear_names), (
-        f"Gear insertion success exposes {success_term.results.shape[0]} gears, but {len(gear_names)} names were"
+    assert success_predicate.results.ndim == 2, "Gear insertion success results must have shape (num_gears, num_envs)."
+    assert success_predicate.results.shape[0] == len(gear_names), (
+        f"Gear insertion success exposes {success_predicate.results.shape[0]} gears, but {len(gear_names)} names were"
         " provided."
     )
-    assert len(success_term.predicates) == len(gear_names), (
-        f"Gear insertion success configures {len(success_term.predicates)} gear predicates, but "
+    assert len(success_predicate.predicates) == len(gear_names), (
+        f"Gear insertion success configures {len(success_predicate.predicates)} gear predicates, but "
         f"{len(gear_names)} names were provided."
     )
 
-    per_gear_completion = success_term.results[:, env_ids].transpose(0, 1).tolist()
+    per_gear_completion = success_predicate.results[:, env_ids].transpose(0, 1).tolist()
     per_gear_gates = []
-    for predicate_cfg in success_term.predicates:
+    for predicate_cfg in success_predicate.predicates:
         gear_predicate = predicate_cfg.func
         assert hasattr(gear_predicate, "results"), "Gear insertion child predicate does not expose gate results."
         assert gear_predicate.results.ndim == 2, "Gear gate results must have shape (num_gates, num_envs)."
-        assert gear_predicate.results.shape == (len(_GEAR_GATE_NAMES), success_term.results.shape[1]), (
+        assert gear_predicate.results.shape == (len(_GEAR_GATE_NAMES), success_predicate.results.shape[1]), (
             f"Gear gate results have shape {tuple(gear_predicate.results.shape)}; expected "
-            f"({len(_GEAR_GATE_NAMES)}, {success_term.results.shape[1]})."
+            f"({len(_GEAR_GATE_NAMES)}, {success_predicate.results.shape[1]})."
         )
         per_gear_gates.append(gear_predicate.results[:, env_ids].transpose(0, 1).tolist())
 
@@ -75,17 +75,19 @@ class GearInsertionFractionRecorder(RecorderTerm):
             self.first_reset = False
             return None, None
 
-        success_term = self._env.termination_manager.get_term_cfg("success").func
-        if not hasattr(success_term, "results"):
-            raise TypeError("gear insertion success term does not expose per-gear completion")
-        per_gear = success_term.results[:, env_ids].transpose(0, 1)
+        progress_tracker = self._env.progress_tracker
+        assert progress_tracker is not None, "Gear insertion diagnostics require task success tracking."
+        success_predicate = progress_tracker.get_predicate("gear_insertion")
+        if not hasattr(success_predicate, "results"):
+            raise TypeError("gear insertion success predicate does not expose per-gear completion")
+        per_gear = success_predicate.results[:, env_ids].transpose(0, 1)
         assert per_gear.ndim == 2 and per_gear.shape[1] == len(self.gear_names), (
             f"Gear completion results have shape {tuple(per_gear.shape)}; expected "
             f"(num_episodes, {len(self.gear_names)})."
         )
         logger.warning(
             "terminal per-gear diagnostics: %s",
-            _terminal_diagnostics(success_term, env_ids, self.gear_names),
+            _terminal_diagnostics(success_predicate, env_ids, self.gear_names),
         )
         fractions = per_gear.to(torch.float32).mean(dim=-1)
         return self.name, fractions

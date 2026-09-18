@@ -11,18 +11,17 @@ from __future__ import annotations
 
 import math
 import torch
-from dataclasses import MISSING
 
-import isaaclab.envs.mdp as mdp
 from isaaclab.managers import TerminationTermCfg
-from isaaclab.utils.configclass import configclass
 from isaaclab.utils.math import quat_apply_inverse
 
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
+from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 from isaaclab_arena.tasks.predicates.composite import CompositePredicate
 from isaaclab_arena.tasks.predicates.spatial import velocity_below_threshold
 from isaaclab_arena.tasks.task_base import TaskBase
+from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 from isaaclab_arena.tasks.terminations import SuccessMode
 
 
@@ -42,15 +41,6 @@ def center_of_mass_in_region(env, object_name: str, region_name: str, bounds: tu
 def cap_episode_finished(env) -> torch.Tensor:
     """End a disconnected CAP episode after settling; never count it as success."""
     return torch.full((env.num_envs,), getattr(env, "cap_episode_finished", False), device=env.device, dtype=torch.bool)
-
-
-@configclass
-class TerminationsCfg:
-    """Episode timeout and managed syringe success."""
-
-    time_out: TerminationTermCfg = TerminationTermCfg(func=mdp.time_out, time_out=True)
-    success: TerminationTermCfg = MISSING
-    cap_finished: TerminationTermCfg = MISSING
 
 
 class SyringeSortTask(TaskBase):
@@ -90,7 +80,7 @@ class SyringeSortTask(TaskBase):
     def get_scene_cfg(self):
         return None
 
-    def get_termination_cfg(self):
+    def get_termination_cfg(self) -> TaskTerminationCfg:
         predicates = []
         for obj, region, bounds in zip(self.objects, self.regions, self.bounds, strict=True):
             predicates.extend([
@@ -107,16 +97,18 @@ class SyringeSortTask(TaskBase):
                     },
                 ),
             ])
-        return TerminationsCfg(
-            cap_finished=TerminationTermCfg(func=cap_episode_finished),
-            success=TerminationTermCfg(
-                func=CompositePredicate,
-                params={
-                    "predicates": predicates,
-                    "mode": SuccessMode.ALL,
-                    "consecutive_steps": self.consecutive_success_steps,
-                },
-            ),
+        settled_in_regions = TerminationTermCfg(
+            func=CompositePredicate,
+            params={
+                "predicates": predicates,
+                "mode": SuccessMode.ALL,
+                "consecutive_steps": self.consecutive_success_steps,
+            },
+        )
+        return TaskTerminationCfg(
+            timeout_s=self.episode_length_s,
+            success=[ProgressObjective(name="syringe_sort", predicate_sequence=[settled_in_regions])],
+            failures={"cap_finished": TerminationTermCfg(func=cap_episode_finished)},
         )
 
     def get_events_cfg(self):

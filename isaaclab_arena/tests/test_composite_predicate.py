@@ -23,12 +23,7 @@ def _test_composite_predicate_lifecycle(_simulation_app) -> bool:
         ObjectInitialRestPoseRecorder,
         ObjectsSettledForConsecutiveSteps,
     )
-    from isaaclab_arena.tasks.predicates.spatial import (
-        depth_in_range,
-        tilt_axis_aligned,
-        velocity_below_threshold,
-        xy_in_proximity,
-    )
+    from isaaclab_arena.tasks.predicates.spatial import depth_in_range, tilt_axis_aligned, xy_in_proximity
     from isaaclab_arena.tasks.terminations import SuccessMode
 
     class _PlayingSimulation:
@@ -206,7 +201,7 @@ def _test_composite_predicate_lifecycle(_simulation_app) -> bool:
         progress_objectives=[
             ProgressObjective(
                 name="shared_reset",
-                predicate_groups={"first": reset_predicate_partial, "second": reset_predicate_partial},
+                predicate_sequences={"first": [reset_predicate_partial], "second": [reset_predicate_partial]},
             )
         ],
         num_envs=env.num_envs,
@@ -217,30 +212,82 @@ def _test_composite_predicate_lifecycle(_simulation_app) -> bool:
     assert len(reset_predicate.reset_calls) == 1
     assert torch.equal(reset_predicate.reset_calls[0], torch.tensor([0]))
 
-    # Nested managed configs are rejected before progress evaluation because active masks cannot propagate yet.
+    # Progress resolves nested managed configs without changing the reusable task definition.
     nested_group_cfg = TerminationTermCfg(
         func=CompositePredicate,
         params={"predicates": [TerminationTermCfg(func=_first_gate)]},
     )
-    try:
-        ProgressTracker(
-            progress_objectives=[ProgressObjective(name="nested", predicate_groups=nested_group_cfg)],
-            num_envs=env.num_envs,
-            device=env.device,
-            env=env,
-        )
-    except AssertionError as error:
-        assert "Nested TerminationTermCfg" in str(error)
-        assert "#1255" in str(error)
-    else:
-        raise AssertionError("ProgressTracker should reject nested managed predicate configs.")
+    nested_tracker = ProgressTracker(
+        progress_objectives=[ProgressObjective(name="nested", predicate_sequence=[nested_group_cfg])],
+        num_envs=env.num_envs,
+        device=env.device,
+        env=env,
+    )
+    assert isinstance(nested_tracker.get_predicate("nested"), CompositePredicate)
+    nested_tracker.step(env, step_index=torch.tensor([1, 1]))
+    assert nested_tracker.is_complete().tolist() == [False, True]
+    assert nested_group_cfg.func is CompositePredicate
     env.first_gate[0] = True
+    nested_tracker.step(env, step_index=torch.tensor([2, 2]))
+    assert nested_tracker.is_complete().tolist() == [True, True]
     assert combined_manager.compute().tolist() == [False, True]
+
+    # A nested settling counter only advances where its containing sequence is active.
+    env.ready = torch.tensor([True, False])
+
+    def _is_ready(env):
+        return env.ready
+
+    delayed_tracker = ProgressTracker(
+        progress_objectives=[
+            ProgressObjective(
+                name="delayed_nested_settling",
+                predicate_sequence=[
+                    _is_ready,
+                    TerminationTermCfg(func=CompositePredicate, params={"predicates": [group_cfg]}),
+                ],
+            )
+        ],
+        num_envs=env.num_envs,
+        device=env.device,
+        env=env,
+    )
+    delayed_composite = delayed_tracker.get_predicate("delayed_nested_settling", predicate_index=1)
+    nested_settled = delayed_composite.predicates[0].func.predicates[-1].func
+    assert isinstance(nested_settled, ObjectsSettledForConsecutiveSteps)
+    delayed_tracker.step(env, step_index=torch.tensor([1, 1]))
+    delayed_tracker.step(env, step_index=torch.tensor([2, 2]))
+    assert nested_settled.consecutive_true_steps.tolist() == [1, 0]
+
+    env.ready[1] = True
+    delayed_tracker.step(env, step_index=torch.tensor([3, 3]))
+    assert nested_settled.consecutive_true_steps.tolist() == [2, 0]
+    assert delayed_tracker.is_complete().tolist() == [True, False]
+    delayed_tracker.step(env, step_index=torch.tensor([4, 4]))
+    assert nested_settled.consecutive_true_steps.tolist() == [2, 1]
+    delayed_tracker.step(env, step_index=torch.tensor([5, 5]))
+    assert delayed_tracker.is_complete().tolist() == [True, True]
+    delayed_tracker.reset(torch.tensor([0]))
+    assert nested_settled.consecutive_true_steps.tolist() == [0, 2]
+    assert delayed_composite.consecutive_true_steps.tolist() == [0, 1]
+    assert delayed_tracker.is_complete().tolist() == [False, True]
 
     # ManagerBase deep-copies configs, so task-build configuration stays declarative.
     assert settled_cfg.func is ObjectsSettledForConsecutiveSteps
+    return True
+
+
+def test_composite_predicate_lifecycle():
+    assert run_function_with_persistent_simulation_app(_test_composite_predicate_lifecycle)
+
+
+def _test_gear_insertion_success_and_diagnostics(_simulation_app) -> bool:
+    import torch
+    from types import SimpleNamespace
 
     from isaaclab_arena.assets.asset import Asset
+    from isaaclab_arena.tasks.predicates.composite import CompositePredicate
+    from isaaclab_arena.tasks.predicates.spatial import velocity_below_threshold
     from isaaclab_arena_environments.isaac_cap.gear_insertion.task.metrics import _terminal_diagnostics
     from isaaclab_arena_environments.isaac_cap.gear_insertion.task.predicates import GearIsSupported
     from isaaclab_arena_environments.isaac_cap.gear_insertion.task.task import GearInsertionTask
@@ -263,7 +310,10 @@ def _test_composite_predicate_lifecycle(_simulation_app) -> bool:
         target_offsets_xyz=[(0.1, 0.0, 0.2), (-0.1, 0.0, 0.2)],
         consecutive_success_steps=3,
     )
-    success_cfg = task.get_termination_cfg().success
+    success_objectives = task.get_termination_cfg().success
+    assert len(success_objectives) == 1
+    assert success_objectives[0].name == "gear_insertion"
+    success_cfg = success_objectives[0].predicate_sequence[0]
     assert success_cfg.func is CompositePredicate
     assert success_cfg.params["consecutive_steps"] == 3
     gear_predicates = success_cfg.params["predicates"]
@@ -360,5 +410,5 @@ def _test_composite_predicate_lifecycle(_simulation_app) -> bool:
     return True
 
 
-def test_composite_predicate_lifecycle():
-    assert run_function_with_persistent_simulation_app(_test_composite_predicate_lifecycle)
+def test_gear_insertion_success_and_diagnostics():
+    assert run_function_with_persistent_simulation_app(_test_gear_insertion_success_and_diagnostics)

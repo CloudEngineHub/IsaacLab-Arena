@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import MISSING
 from typing import Any
 
 import isaaclab.envs.mdp as mdp
@@ -19,6 +18,7 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
+from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 from isaaclab_arena.tasks.predicates.composite import CompositePredicate
 from isaaclab_arena.tasks.predicates.spatial import (
     depth_in_range,
@@ -27,6 +27,7 @@ from isaaclab_arena.tasks.predicates.spatial import (
     xy_in_proximity,
 )
 from isaaclab_arena.tasks.task_base import TaskBase
+from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 from isaaclab_arena.tasks.terminations import SuccessMode
 
 from .metrics import GearInsertionFractionMetric
@@ -42,14 +43,6 @@ class EventsCfg:
         mode="reset",
         params={"reset_joint_targets": True},
     )
-
-
-@configclass
-class TerminationsCfg:
-    """Timeout and all-gears success terms."""
-
-    time_out: TerminationTermCfg = TerminationTermCfg(func=mdp.time_out, time_out=True)
-    success: TerminationTermCfg = MISSING
 
 
 def _make_gear_success_composite_predicate_cfg(
@@ -188,21 +181,23 @@ class GearInsertionTask(TaskBase):
             )
             for gear, target_offset_xyz in zip(gears, offsets, strict=True)
         ]
-        self.termination_cfg = TerminationsCfg(
-            success=TerminationTermCfg(
-                func=CompositePredicate,
-                params={
-                    "predicates": gear_success_predicates,
-                    "mode": SuccessMode.ALL,
-                    "consecutive_steps": consecutive_success_steps,
-                },
-            )
+        success = TerminationTermCfg(
+            func=CompositePredicate,
+            params={
+                "predicates": gear_success_predicates,
+                "mode": SuccessMode.ALL,
+                "consecutive_steps": consecutive_success_steps,
+            },
+        )
+        self.termination_cfg = TaskTerminationCfg(
+            timeout_s=self.episode_length_s,
+            success=[ProgressObjective(name="gear_insertion", predicate_sequence=[success])],
         )
 
     def get_scene_cfg(self) -> Any:
         return None
 
-    def get_termination_cfg(self) -> Any:
+    def get_termination_cfg(self) -> TaskTerminationCfg:
         return self.termination_cfg
 
     def get_events_cfg(self) -> Any:

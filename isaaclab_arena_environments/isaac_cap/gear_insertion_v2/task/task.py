@@ -18,6 +18,7 @@ from isaaclab.utils.configclass import configclass
 from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
+from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
 from isaaclab_arena.tasks.predicates.composite import CompositePredicate
 from isaaclab_arena.tasks.predicates.spatial import (
     depth_in_range,
@@ -26,6 +27,7 @@ from isaaclab_arena.tasks.predicates.spatial import (
     xy_in_proximity,
 )
 from isaaclab_arena.tasks.task_base import TaskBase
+from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 from isaaclab_arena.tasks.terminations import SuccessMode
 
 from .metrics import GearInsertionFractionMetric
@@ -40,12 +42,6 @@ class EventsCfg:
         mode="reset",
         params={"reset_joint_targets": True},
     )
-
-
-@configclass
-class TerminationsCfg:
-    time_out: TerminationTermCfg = TerminationTermCfg(func=mdp.time_out, time_out=True)
-    success: TerminationTermCfg | None = None
 
 
 class GearMeshTask(TaskBase):
@@ -82,33 +78,31 @@ class GearMeshTask(TaskBase):
         self.gears = gear_assets
         self.gear = gear_assets[0]
         self.events_cfg = EventsCfg()
-        self.termination_cfg = TerminationsCfg(
-            success=TerminationTermCfg(
-                func=gear_mesh_success,
-                params={
-                    "board_asset_cfg": SceneEntityCfg(board.name),
-                    "gear_asset_cfgs": [SceneEntityCfg(asset.name) for asset in gear_assets],
-                    "robot_asset_cfg": SceneEntityCfg("robot"),
-                    "tcp_body_name": "robotiq_base",
-                    "tcp_offset_xyz": (0.0, 0.0, 0.157),
-                    "target_offsets_xyz": offsets,
-                    "button_latch_m": 0.005,
-                    "drive_speed_rad_s": 4.0,
-                    "spin_fraction": 0.3,
-                    "gear_teeth": teeth,
-                    "spin_window_s": 0.5,
-                    "xy_threshold_m": 0.005348669,
-                    "z_threshold_m": 0.008,
-                    "hold_time_s": 1.0,
-                },
-            ),
+        self._success_cfg = TerminationTermCfg(
+            func=gear_mesh_success,
+            params={
+                "board_asset_cfg": SceneEntityCfg(board.name),
+                "gear_asset_cfgs": [SceneEntityCfg(asset.name) for asset in gear_assets],
+                "robot_asset_cfg": SceneEntityCfg("robot"),
+                "tcp_body_name": "robotiq_base",
+                "tcp_offset_xyz": (0.0, 0.0, 0.157),
+                "target_offsets_xyz": offsets,
+                "button_latch_m": 0.005,
+                "drive_speed_rad_s": 4.0,
+                "spin_fraction": 0.3,
+                "gear_teeth": teeth,
+                "spin_window_s": 0.5,
+                "xy_threshold_m": 0.005348669,
+                "z_threshold_m": 0.008,
+                "hold_time_s": 1.0,
+            },
         )
 
     def set_gear_teeth(self, gear_teeth: int) -> None:
         """Update the expected driven speed for the selected asset family."""
         self.configure_layout(
             (int(gear_teeth),),
-            self.termination_cfg.success.params["target_offsets_xyz"],
+            self._success_cfg.params["target_offsets_xyz"],
         )
 
     def configure_layout(
@@ -125,14 +119,17 @@ class GearMeshTask(TaskBase):
             raise ValueError("gear-mesh station teeth must be 16, 20, or 24")
         if any(len(offset) != 3 for offset in offsets):
             raise ValueError("gear-mesh station offsets must be 3D")
-        self.termination_cfg.success.params["gear_teeth"] = teeth
-        self.termination_cfg.success.params["target_offsets_xyz"] = offsets
+        self._success_cfg.params["gear_teeth"] = teeth
+        self._success_cfg.params["target_offsets_xyz"] = offsets
 
     def get_scene_cfg(self) -> Any:
         return None
 
-    def get_termination_cfg(self) -> Any:
-        return self.termination_cfg
+    def get_termination_cfg(self) -> TaskTerminationCfg:
+        return TaskTerminationCfg(
+            timeout_s=self.episode_length_s,
+            success=[ProgressObjective(name="gear_mesh", predicate_sequence=[self._success_cfg])],
+        )
 
     def get_events_cfg(self) -> Any:
         return self.events_cfg
@@ -281,21 +278,29 @@ class GearInsertionTask(TaskBase):
             )
             for gear, target_offset_xyz in zip(gears, offsets, strict=True)
         ]
-        self.termination_cfg = TerminationsCfg(
-            success=TerminationTermCfg(
-                func=CompositePredicate,
-                params={
-                    "predicates": gear_success_predicates,
-                    "mode": SuccessMode.ALL,
-                    "consecutive_steps": consecutive_success_steps,
-                },
-            )
+        self.termination_cfg = TaskTerminationCfg(
+            timeout_s=self.episode_length_s,
+            success=[
+                ProgressObjective(
+                    name="gear_insertion",
+                    predicate_sequence=[
+                        TerminationTermCfg(
+                            func=CompositePredicate,
+                            params={
+                                "predicates": gear_success_predicates,
+                                "mode": SuccessMode.ALL,
+                                "consecutive_steps": consecutive_success_steps,
+                            },
+                        )
+                    ],
+                )
+            ],
         )
 
     def get_scene_cfg(self) -> Any:
         return None
 
-    def get_termination_cfg(self) -> Any:
+    def get_termination_cfg(self) -> TaskTerminationCfg:
         return self.termination_cfg
 
     def get_events_cfg(self) -> Any:

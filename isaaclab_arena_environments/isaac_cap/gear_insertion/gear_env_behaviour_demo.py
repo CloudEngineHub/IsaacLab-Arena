@@ -114,8 +114,9 @@ class GearEnvBehaviourDemo(EnvBehaviourDemo):
         assert len(body_ids) == 1, f"Expected one robotiq_base body, got {body_ids}."
         self.ee_body_id = int(body_ids[0])
 
-        success_cfg = self.base_env.termination_manager.get_term_cfg("success")
-        self.success_term = success_cfg.func
+        progress_tracker = self.base_env.progress_tracker
+        assert progress_tracker is not None, "Gear insertion diagnostics require task success tracking."
+        self.success_predicate = progress_tracker.get_predicate("gear_insertion")
         task = self.arena_environment.task
         self.plate_name = task.plate.name
         self.gear_names = tuple(gear.name for gear in task.gears)
@@ -270,7 +271,7 @@ class GearEnvBehaviourDemo(EnvBehaviourDemo):
                     return
 
         diagnostics = {
-            gear_name: self.success_term.results[gear_index].tolist()
+            gear_name: self.success_predicate.results[gear_index].tolist()
             for gear_index, gear_name in enumerate(self.gear_names)
         }
         raise RuntimeError(f"Final placement did not trigger the environment reset: {diagnostics}")
