@@ -32,6 +32,9 @@ Run the cluttered variant in the GUI from the Arena repository root inside its c
 
 ## Isaac-cap policy — agent instructions
 
+See [Running the CAP policy](docs/running_cap_policy.md) for a two-terminal guide,
+prerequisites, result interpretation, and troubleshooting.
+
 Run the environment in this checkout's Docker container and the policy graph in
 the existing Isaac-cap checkout on the host; do not copy graph, perception, or
 planning code into Arena. These instructions cover `both` and `cluttered`.
