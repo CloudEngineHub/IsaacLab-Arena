@@ -2,8 +2,11 @@
 
 Dispose of every syringe in the sharps container and let
 all syringes settle for 50 consecutive simulation steps. Scene layouts and goals
-live in YAML; `environment.py` applies Newton physics and the task's camera and
-gripper settings to Arena's shared FR3/Robotiq embodiment. Policy code stays in Isaac-cap.
+live in YAML. All variants include `environments/syringe_env_config.yaml` for Newton
+physics settings. `environment.py` retains camera, gripper, and placement
+adaptations, plus a direct assignment of `enable_multiccd`, which Isaac Lab does
+not yet expose.
+Policy code stays in Isaac-cap.
 
 Assets load directly from
 `{ARENA_NUCLEUS_DIR}/Arena/assets/object_library/temp_newton_envs/cap_envs/syringe_disposal/assets`.

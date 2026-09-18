@@ -3,54 +3,21 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# TODO(alexmillane) [physics-parameters-overrides-missing-feature]: Remove this file once we can
-# control the physics parameters in the yaml files.
-
-"""Syringe sorting with the shared CAP FR3 embodiment and task-owned physics."""
+"""Syringe factories with camera, placement, and physics adaptations."""
 
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
-from isaaclab.utils.configclass import configclass
-from isaaclab_newton.physics import MJWarpSolverCfg, NewtonCfg, NewtonShapeCfg
-
 from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg, ArenaEnvironmentFactory
-from isaaclab_arena.utils.physics_backend import PhysicsBackend
 
 
-@configclass
-class SyringeSolverCfg(MJWarpSolverCfg):
-    enable_multiccd: bool = True
-    """Enable multiple contacts for convex collision pairs, as in CAP."""
-
-
-def configure_syringe_physics(env_cfg):
-    """Apply CAP's 50 Hz, ten-substep Newton tool-sort profile."""
-    env_cfg.sim.dt = 0.02
-    env_cfg.sim.render_interval = 1
-    env_cfg.sim.gravity = (0.0, 0.0, -9.81)
-    env_cfg.sim.use_newton_actuators = True
-    env_cfg.decimation = 1
-    env_cfg.scene.replicate_physics = False
-    env_cfg.sim.physics = NewtonCfg(
-        solver_cfg=SyringeSolverCfg(
-            solver="newton",
-            disable_sensors=True,
-            integrator="implicitfast",
-            nconmax=5000,
-            njmax=5000,
-            iterations=100,
-            ls_iterations=50,
-            impratio=20.0,
-            cone="elliptic",
-            use_mujoco_contacts=True,
-        ),
-        default_shape_cfg=NewtonShapeCfg(ke=60000.0, kd=500.0, gap=0.002),
-        num_substeps=10,
-        use_cuda_graph=True,
-        debug_mode=False,
-    )
-    return env_cfg
+def _apply_syringe_graph_config(env_cfg, graph_callback):
+    """Apply the remaining Python physics settings and the graph's configuration."""
+    # TODO(alexmillane) [isaaclab-multiccd-config-missing-feature]: Move this to YAML
+    # once Isaac Lab exposes enable_multiccd in MJWarpSolverCfg.
+    env_cfg.sim.physics.solver_cfg.enable_multiccd = True
+    return graph_callback(env_cfg)
 
 
 @dataclass
@@ -75,6 +42,16 @@ class SyringeBase(ArenaEnvironmentFactory[SyringeSortEnvironmentCfg]):
 
         spec = ArenaEnvGraphSpec.from_yaml(str(Path(__file__).with_name(self.yaml_file)))
         arena_env = spec.to_arena_env(enable_cameras=cfg.enable_cameras)
+        # NOTE(alexmillane, 2028.09.17): The placement of 4 syringes on the tray is tight.
+        # Below ensures that they are correctly placed.
+        # NOTE(alexmillane, 2028.09.17) [arena-parameters-overrides-missing-feature]:
+        # Currently solver params only adjustable from python. Move these overrides to yaml when this is possible.
+        # NOTE(alexmillane, 2028.09.17) [clutter-placement-missing-feature]:
+        # Move to clutter-based placement when that feature is enabled.
+        arena_env.placer_params.random_yaw_init = False
+        arena_env.placer_params.allow_best_loss_fallbacks = False
+        arena_env.placer_params.solver_params.clearance_m = 0.015
+        arena_env.placer_params.max_placement_attempts = 30
 
         # TODO(alexmillane) [berkley-cap-align-embodiments]: Remove these per-task custom
         # embodiment configurations once the upstream repo has done it.
@@ -92,8 +69,7 @@ class SyringeBase(ArenaEnvironmentFactory[SyringeSortEnvironmentCfg]):
         if cfg.episode_length_s is not None:
             assert cfg.episode_length_s > 0
             arena_env.task.episode_length_s = cfg.episode_length_s
-        arena_env.default_physics_backend = PhysicsBackend.NEWTON
-        arena_env.env_cfg_callback = configure_syringe_physics
+        arena_env.env_cfg_callback = partial(_apply_syringe_graph_config, graph_callback=arena_env.env_cfg_callback)
         return arena_env
 
 
@@ -117,12 +93,6 @@ class SyringeBothEnvironment(SyringeBase):
     yaml_file = "syringe_both.yaml"
     _legacy_argparse_cfg_type = SyringeBothEnvironmentCfg
 
-    def build(self, cfg: SyringeBothEnvironmentCfg):
-        arena_env = super().build(cfg)
-        arena_env.placer_params.random_yaw_init = False
-        arena_env.placer_params.allow_best_loss_fallbacks = False
-        return arena_env
-
 
 @dataclass
 class SyringeClutteredEnvironmentCfg(SyringeBothEnvironmentCfg):
@@ -135,9 +105,3 @@ class SyringeClutteredEnvironment(SyringeBothEnvironment):
     name = "syringe_cluttered_newton"
     yaml_file = "syringe_cluttered.yaml"
     _legacy_argparse_cfg_type = SyringeClutteredEnvironmentCfg
-
-    def build(self, cfg: SyringeClutteredEnvironmentCfg):
-        arena_env = super().build(cfg)
-        arena_env.placer_params.solver_params.clearance_m = 0.015
-        arena_env.placer_params.max_placement_attempts = 30
-        return arena_env

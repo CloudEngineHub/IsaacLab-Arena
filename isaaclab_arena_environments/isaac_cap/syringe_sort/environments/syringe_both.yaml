@@ -3,6 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+external_yaml: syringe_env_config.yaml
+
 env_name: syringe_both_newton
 embodiment:
   id: fr3
