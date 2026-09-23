@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 
 from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg, ArenaEnvironmentFactory
 
+from ..registration import register_environment
+
 if TYPE_CHECKING:
     from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
     from isaaclab_arena.environments.isaaclab_arena_manager_based_env_cfg import IsaacLabArenaManagerBasedRLEnvCfg
@@ -109,7 +111,9 @@ class GearMeshNewtonEnvironment(ArenaEnvironmentFactory[GearMeshNewtonEnvironmen
 
     def build(self, cfg: GearMeshNewtonEnvironmentCfg) -> IsaacLabArenaEnvironment:
         from isaaclab_arena.environment_spec.arena_env_graph_spec import ArenaEnvGraphSpec
+        from isaaclab_arena_environments.isaac_cap import register_components
 
+        register_components()
         spec = ArenaEnvGraphSpec.from_yaml(str(self.scene_spec))
         arena_env = spec.to_arena_env(enable_cameras=cfg.enable_cameras)
         arena_env.embodiment.camera_config.use_overhead_profile("gear")
@@ -126,6 +130,7 @@ class GearMeshNewtonEnvironment(ArenaEnvironmentFactory[GearMeshNewtonEnvironmen
         return arena_env
 
 
+@register_environment(cfg_type=GearInsertionEasyNewtonEnvironmentCfg)
 class GearInsertionEasyNewtonEnvironment(GearMeshNewtonEnvironment):
     """Build AUTOLab gearmesh-easy-single-01."""
 
@@ -181,6 +186,7 @@ class _GearMeshLayoutNewtonEnvironment(GearMeshNewtonEnvironment):
         return arena_env
 
 
+@register_environment(cfg_type=GearMeshPairNewtonEnvironmentCfg)
 class GearMeshPairNewtonEnvironment(_GearMeshLayoutNewtonEnvironment):
     """Build AUTOLab's generated gearmesh-easy-pair family."""
 
@@ -191,6 +197,7 @@ class GearMeshPairNewtonEnvironment(_GearMeshLayoutNewtonEnvironment):
     gear_names = ("gear_a", "gear_b")
 
 
+@register_environment(cfg_type=GearMeshTrainNewtonEnvironmentCfg)
 class GearMeshTrainNewtonEnvironment(_GearMeshLayoutNewtonEnvironment):
     """Build AUTOLab's generated gearmesh-medium-train family."""
 

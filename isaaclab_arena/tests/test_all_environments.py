@@ -40,9 +40,15 @@ ENV_ARG_OVERRIDES: dict[str, dict] = {
 
 def _build_jobs_for_all_envs() -> list[dict]:
     ensure_environments_registered()
-    env_names = sorted(EnvironmentRegistry().get_all_keys())
+    env_registry = EnvironmentRegistry()
+    env_names = sorted(env_registry.get_all_keys())
     jobs = []
     for env_name in env_names:
+        environment_factory_type = env_registry.get_component_by_name(env_name)
+        # TODO(xinjieyao, 2026.09.23): Remove after CAP envs are removed or
+        # https://github.com/isaac-sim/IsaacLab-Arena/pull/1315 is merged.
+        if environment_factory_type.__module__.startswith("isaaclab_arena_environments.isaac_cap."):
+            continue
         arena_env_args = {"environment": env_name}
         arena_env_args.update(ENV_ARG_OVERRIDES.get(env_name, {}))
         jobs.append({
