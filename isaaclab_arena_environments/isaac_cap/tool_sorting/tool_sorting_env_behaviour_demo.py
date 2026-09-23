@@ -34,7 +34,7 @@ _GRASP_DESCENT_TOLERANCE_M = 0.02
 _GRASP_Z_OFFSET_M = _ROBOTIQ_BASE_TO_GRASP_M + _GRASP_HEIGHT_OFFSET_M
 _PREGRASP_Z_OFFSET_M = _GRASP_Z_OFFSET_M + _PREGRASP_DISTANCE_M
 _MOVE_TO_MAX_STEPS = 720
-_DROP_HEIGHT_ABOVE_SLOT_M = 0.10
+_DROP_HEIGHT_ABOVE_SLOT_M = 0.05
 _NUM_ENVS = 2
 _EASY_LEVELS = ("1", "2", "3")
 _PICK_TARGET_BY_LEVEL = {
@@ -53,12 +53,10 @@ def _build_tool_sort_demo_environment(level: str):
     from isaaclab_arena_environments.isaac_cap.tool_sorting.embodiment import (
         ToolSortingFr3Robotiq2f85DifferentialIKEmbodiment,
     )
-    from isaaclab_arena_environments.isaac_cap.tool_sorting.environment import configure_tool_sort_placement
 
     register_components()
     spec_path = Path(__file__).with_name(f"tool_sorting_easy_{level}.yaml")
     arena_environment = ArenaEnvGraphSpec.from_yaml(str(spec_path)).to_arena_env(enable_cameras=False)
-    configure_tool_sort_placement(arena_environment)
 
     source_embodiment = arena_environment.embodiment
     arena_environment.embodiment = ToolSortingFr3Robotiq2f85DifferentialIKEmbodiment(
