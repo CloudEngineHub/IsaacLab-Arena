@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from isaaclab_arena.assets.register import register_asset
 from isaaclab_arena.embodiments.common.arm_mode import ArmMode
@@ -42,6 +42,7 @@ class IndustrialBimanualYamEmbodiment(EmbodimentBase):
         use_tiled_cameras: bool = False,
         use_instanceable_meshes: bool = False,
         camera_config: ArenaCameraCfg | None = None,
+        spawn_cfg_addon: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         """Configure the fixed YAM pair with an optional task-specific camera rig.
 
@@ -61,6 +62,7 @@ class IndustrialBimanualYamEmbodiment(EmbodimentBase):
             enable_cameras=enable_cameras,
             concatenate_observation_terms=True,
             arm_mode=ArmMode.DUAL_ARM,
+            spawn_cfg_addon=spawn_cfg_addon,
         )
         self.gripper = YamGripper()
         self.scene_config = BimanualYamSceneCfg(
