@@ -16,7 +16,6 @@ from isaaclab_arena.assets.asset import Asset
 from isaaclab_arena.metrics.metric_base import MetricBase
 from isaaclab_arena.metrics.success_rate import SuccessRateMetric
 from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
-from isaaclab_arena.tasks.predicates.composite import CompositePredicate
 from isaaclab_arena.tasks.predicates.gripper import gripper_released
 from isaaclab_arena.tasks.predicates.spatial import (
     depth_in_range,
@@ -25,9 +24,10 @@ from isaaclab_arena.tasks.predicates.spatial import (
     tilt_axis_aligned,
     velocity_below_threshold,
 )
+from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
-from isaaclab_arena.tasks.terminations import SuccessMode
+from isaaclab_arena.tasks.terminations import check_success
 
 if TYPE_CHECKING:
     from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
@@ -163,17 +163,13 @@ class UsbcInsertionTask(TaskBase):
                 },
             )
             predicates.append(withdrawal_cfg)
-        self._success_cfg = TerminationTermCfg(
-            func=CompositePredicate,
-            params={
-                "predicates": predicates,
-                "mode": SuccessMode.ALL,
-                "consecutive_steps": consecutive_success_steps,
-            },
+        success_requirement = TrueForConsecutiveStepsCfg(
+            predicate=TerminationTermCfg(func=check_success, params={"predicates": predicates}),
+            required_steps=consecutive_success_steps,
         )
         self._gripper_predicates = [
             predicate
-            for predicate in self._success_cfg.params["predicates"]
+            for predicate in success_requirement.predicate.params["predicates"]
             if predicate.func in (gripper_released, gripper_distance_from_object_exceeds_threshold)
         ]
         self.termination_cfg = TaskTerminationCfg(
@@ -181,7 +177,7 @@ class UsbcInsertionTask(TaskBase):
             success=[
                 ProgressObjective(
                     name="usbc_insertion",
-                    predicate_sequence=[self._success_cfg],
+                    predicate_sequence=[success_requirement],
                 )
             ],
         )

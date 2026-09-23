@@ -308,6 +308,78 @@ def test_gear_success_requires_jaw_release_and_samples_position_once() -> None:
     )
 
 
+def _test_gear_mesh_reset_event_clears_legacy_state(_simulation_app) -> bool:
+    import torch
+    from types import SimpleNamespace
+
+    from isaaclab.managers import SceneEntityCfg, TerminationTermCfg
+
+    from isaaclab_arena.progress_tracking.progress_objective import ProgressObjective
+    from isaaclab_arena.progress_tracking.progress_tracker import ProgressTracker
+    from isaaclab_arena_environments.isaac_cap.gear_insertion_v2.task.terminations import (
+        gear_mesh_success,
+        reset_gear_mesh_state,
+    )
+
+    for objective_name in ("gear_mesh", "subtask_0/gear_mesh"):
+        env = SimpleNamespace(
+            num_envs=2,
+            device="cpu",
+            step_dt=0.1,
+            scene={
+                "board": SimpleNamespace(data=SimpleNamespace(joint_names=["pinion_joint", "button_joint"])),
+                "gear": SimpleNamespace(),
+            },
+        )
+        success_cfg = TerminationTermCfg(
+            func=gear_mesh_success,
+            params={
+                "board_asset_cfg": SceneEntityCfg("board"),
+                "gear_asset_cfgs": [SceneEntityCfg("gear")],
+                "gripper": object(),
+                "hold_time_s": 1.0,
+                "spin_window_s": 0.5,
+            },
+        )
+        objective = ProgressObjective(name=objective_name, predicate_sequence=[success_cfg])
+        tracker = ProgressTracker([objective], num_envs=env.num_envs, device=env.device, env=env)
+        env.progress_tracker = tracker
+        success = tracker.get_predicate(objective_name)
+        success.latched[:] = True
+        success.seated_seen[:] = True
+        success.started_after_seating[:] = True
+        success.success_steps[:] = 3
+        success.spin_history[:] = 4.0
+        success.spin_samples_seen[:] = success.spin_window_steps
+        success.spin_history_index = 2
+
+        # The task-local event clears legacy state; tracker.reset() only clears progress.
+        reset_gear_mesh_state(env, env_ids=torch.tensor([0]))
+        tracker.reset([0])
+        assert success.latched.tolist() == [False, True]
+        assert success.seated_seen.tolist() == [False, True]
+        assert success.started_after_seating.tolist() == [False, True]
+        assert success.success_steps.tolist() == [0, 3]
+        assert not success.spin_history[:, 0].any()
+        assert (success.spin_history[:, 1] == 4.0).all()
+        assert success.spin_samples_seen.tolist() == [0, success.spin_window_steps]
+        assert success.spin_history_index == 2
+
+        reset_gear_mesh_state(env)
+        assert not success.latched.any()
+        assert not success.seated_seen.any()
+        assert not success.started_after_seating.any()
+        assert not success.success_steps.any()
+        assert not success.spin_history.any()
+        assert not success.spin_samples_seen.any()
+        assert success.spin_history_index == 0
+    return True
+
+
+def test_gear_mesh_reset_event_clears_legacy_state() -> None:
+    assert run_function_with_persistent_simulation_app(_test_gear_mesh_reset_event_clears_legacy_state)
+
+
 def _test_gear_task_configures_release_checks_for_the_embodiment_gripper(_simulation_app) -> bool:
     from types import SimpleNamespace
 
@@ -316,6 +388,7 @@ def _test_gear_task_configures_release_checks_for_the_embodiment_gripper(_simula
     from isaaclab_arena.tasks.predicates.gripper import gripper_released
     from isaaclab_arena_environments.isaac_cap.gear_insertion_v2.embodiment import IndustrialFr3Robotiq2f85Embodiment
     from isaaclab_arena_environments.isaac_cap.gear_insertion_v2.task.task import GearMeshTask
+    from isaaclab_arena_environments.isaac_cap.gear_insertion_v2.task.terminations import reset_gear_mesh_state
 
     task = GearMeshTask(
         board=SimpleNamespace(name="board"),
@@ -325,6 +398,9 @@ def _test_gear_task_configures_release_checks_for_the_embodiment_gripper(_simula
     )
     params = task.get_termination_cfg().success[0].predicate_sequence[0].params
     assert "gripper" not in params
+    reset_event = task.get_events_cfg().reset_gear_mesh_state
+    assert reset_event.mode == "reset"
+    assert reset_event.func is reset_gear_mesh_state
 
     embodiment = IndustrialFr3Robotiq2f85Embodiment()
     task.configure_for_embodiment(embodiment)
