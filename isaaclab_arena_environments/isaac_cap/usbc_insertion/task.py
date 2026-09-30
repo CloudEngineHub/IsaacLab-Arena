@@ -29,6 +29,7 @@ from isaaclab_arena.tasks.predicates.temporal import TrueForConsecutiveStepsCfg
 from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
 from isaaclab_arena.tasks.terminations import check_success
+from isaaclab_arena_environments.isaac_cap.cap_policy import cap_episode_finished
 
 if TYPE_CHECKING:
     from isaaclab_arena.embodiments.embodiment_base import EmbodimentBase
@@ -182,6 +183,7 @@ class UsbcInsertionTask(TaskBase):
                     predicate_sequence=[success_requirement],
                 )
             ],
+            failures={"cap_finished": TerminationTermCfg(func=cap_episode_finished)},
         )
 
     def configure_for_embodiment(self, embodiment: EmbodimentBase) -> None:

@@ -5,7 +5,7 @@
 
 shared:
   environment:
-    type: isaaclab_arena_environments/isaac_cap/tool_hanging/wrench_easy.yaml
+    type: vabar_contact_rich_insertion__usbc_insertion_medium
     enable_cameras: true
   environment_builder:
     num_envs: 1
@@ -17,11 +17,10 @@ shared:
     port: 19000
     robot_profile: yam_bimanual
     camera_mapping:
-      top_camera: overhead
-      left_wrist_camera: eye_in_hand_left
-      right_wrist_camera: eye_in_hand_right
-      side_camera: side
+      top_camera: topdown
+      right_wrist_camera: wrist
+      left_wrist_camera: wrist_support
   rollout_limit:
     num_episodes: 1
 runs:
-  wrench_easy: {}
+  usbc_medium: {}
