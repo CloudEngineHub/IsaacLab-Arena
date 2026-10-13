@@ -150,8 +150,12 @@ class RigidObjectSet(Object):
 
     def get_contact_sensor_prim_path(self) -> str:
         """Return the contact-sensor path shared by all normalized member USDs."""
-        get_member_prim_path = super().get_contact_sensor_prim_path
-        member_prim_paths = [get_member_prim_path(usd_path) for usd_path in self.member_usd_paths]
+        variants = (self.spawn_cfg_addon or {}).get("variants")
+        member_prim_paths = []
+        for usd_path in self.member_usd_paths:
+            member_spawn_cfg = sim_utils.UsdFileCfg(usd_path=usd_path, variants=variants)
+            member_body_path = self._get_spawn_cfg_geometry(member_spawn_cfg).get_contact_body_path()
+            member_prim_paths.append(self.prim_path + member_body_path)
         assert len(set(member_prim_paths)) == 1, (
             f"RigidObjectSet '{self.name}' member USDs must have the same contact-sensor prim path; "
             f"got {member_prim_paths}."
