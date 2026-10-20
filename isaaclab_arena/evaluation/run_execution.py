@@ -162,8 +162,8 @@ def _build_environment_from_cfg(
         output_dir: Directory the run's recorded dataset is exported to.
         rebuild_index: Index of the rebuild this environment serves.
     """
-    # Stamp runtime-derived recorder output options onto a copy of the run's builder cfg so composition in
-    # ArenaEnvBuilder.compose_manager_cfg sees them without mutating the caller's run config.
+    # Copy runtime-derived recorder output options into the builder cfg so
+    # ArenaEnvBuilder.build_env_cfg sees them without mutating the caller's run config.
     run_cfg = deepcopy(cfg)
     run_cfg.environment_builder.recorder_dataset_export_dir_path = str(output_dir)
     run_cfg.environment_builder.recorder_dataset_filename = f"dataset_{cfg.name}_rebuild{rebuild_index}"
