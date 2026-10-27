@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, TypeVar
 
 from isaaclab_arena.assets.register import agent_ready, register_object_relation
 from isaaclab_arena.assets.registries import ObjectRelationLibraryRegistry
+from isaaclab_arena.relations.axis import Axis
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox, quaternion_to_90_deg_z_quarters
 
 if TYPE_CHECKING:
@@ -114,6 +115,45 @@ class FaceTo(RelationBase):
 
 @agent_ready
 @register_object_relation
+class AlignWith(Relation):
+    """Align bounding-box centres along one world axis, leaving other axes unconstrained."""
+
+    name = "align_with"
+
+    def __init__(
+        self,
+        parent: PlaceableAsset,
+        axis: Axis | str,
+        offset_m: float = 0.0,
+        tolerance_m: float = 0.02,
+        relation_loss_weight: float = 1.0,
+    ):
+        """Align the subject's bounding-box centre with the reference centre plus offset_m along axis, within tolerance_m.
+
+        Args:
+            parent: Reference asset participating in placement.
+            axis: World axis to align, one of ``x``, ``y``, or ``z``.
+            offset_m: Signed subject-minus-reference centre displacement along that axis.
+            tolerance_m: Zero-penalty alignment band and maximum error accepted by placement validation.
+            relation_loss_weight: Weight of the alignment objective during solving.
+        """
+        super().__init__(parent, relation_loss_weight)
+        assert math.isfinite(offset_m), "offset_m must be finite"
+        assert math.isfinite(tolerance_m) and tolerance_m >= 0, "tolerance_m must be finite and non-negative"
+        assert math.isfinite(relation_loss_weight) and relation_loss_weight > 0, "Alignment weight must be positive"
+        self.axis = Axis(axis)
+        self.offset_m = offset_m
+        self.tolerance_m = tolerance_m
+
+    def validate_placement_configuration(self, subject: PlaceableAsset, objects: set[PlaceableAsset]) -> None:
+        """Require a movable subject and a distinct reference that participates in placement."""
+        assert self.parent is not subject, "AlignWith requires a different reference asset"
+        assert not subject.is_anchor, f"Anchor object '{subject.name}' cannot have an AlignWith relation"
+        assert self.parent in objects, f"AlignWith reference '{self.parent.name}' must participate in placement"
+
+
+@agent_ready
+@register_object_relation
 class NextTo(Relation):
     """Represents a 'next to' relationship between objects.
 
@@ -131,7 +171,7 @@ class NextTo(Relation):
         side: Side | str,
         relation_loss_weight: float = 1.0,
         distance_m: float = 0.05,
-        cross_position_ratio: float = 0.0,
+        cross_position_ratio: float | None = None,
         tolerance_m: float = 1e-2,
     ):
         """
@@ -144,7 +184,8 @@ class NextTo(Relation):
                 (cross) axis, from -1.0 (min edge) through 0.0 (centered) to 1.0 (max edge).
                 The cross axis depends on the side: for POSITIVE_X / NEGATIVE_X
                 the cross axis is Y; for POSITIVE_Y / NEGATIVE_Y it is X.
-                Default: 0.0 (centered).
+                Default: None (any position within the valid cross-axis range).
+                Set 0.0 explicitly to prefer centering.
             tolerance_m: Slack (meters) for placement validation: the child passes when its side and
                 distance violations are each within this value. Raise it to accept the side but care
                 less about the exact distance. cross_position_ratio is a soft preference, not gated.
@@ -152,8 +193,8 @@ class NextTo(Relation):
         super().__init__(parent, relation_loss_weight)
         assert distance_m > 0.0, f"Distance must be positive, got {distance_m}"
         assert (
-            -1.0 <= cross_position_ratio <= 1.0
-        ), f"cross_position_ratio must be in [-1, 1], got {cross_position_ratio}"
+            cross_position_ratio is None or -1.0 <= cross_position_ratio <= 1.0
+        ), f"cross_position_ratio must be None or in [-1, 1], got {cross_position_ratio}"
         assert tolerance_m >= 0.0, f"tolerance_m must be non-negative, got {tolerance_m}"
         self.distance_m = distance_m
         self.side = Side(side)

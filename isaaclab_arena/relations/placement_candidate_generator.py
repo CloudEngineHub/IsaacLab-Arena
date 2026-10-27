@@ -10,11 +10,11 @@ from __future__ import annotations
 import torch
 from typing import TYPE_CHECKING
 
-from isaaclab_arena.relations.bounding_box_helpers import update_candidate_bounds
+from isaaclab_arena.relations.bounding_box_helpers import rotate_candidate_bboxes
 from isaaclab_arena.relations.collision_mode import object_uses_mesh_collision
 from isaaclab_arena.relations.initializers.initializer_factory import create_initializer
 from isaaclab_arena.relations.placement_candidate_batch import PlacementCandidate, PlacementCandidateBatch
-from isaaclab_arena.relations.relations import ClutterOn, FaceTo, RotateAroundSolution, get_relation
+from isaaclab_arena.relations.relations import AlignWith, ClutterOn, FaceTo, RotateAroundSolution, get_relation
 from isaaclab_arena.utils.bounding_box import AxisAlignedBoundingBox
 from isaaclab_arena.utils.random import get_random_rotation
 from isaaclab_arena.utils.yaw import wrap_angle_to_pi, yaw_from_quat_xyzw
@@ -47,21 +47,25 @@ class PlacementCandidateGenerator:
         """
         candidates = []
         for env_id, bounds in enumerate(env_bboxes):
+            self._validate_alignment_headings(objects, bounds)
             for candidate_id in range(candidates_per_env):
                 if generator is not None:
                     assert self.params.placement_seed is not None
                     generator.manual_seed(self.params.placement_seed + env_id * candidates_per_env + candidate_id)
+                # Rotate bounds before sampling positions: off-centre assets have different
+                # alignment centres and support footprints at different orientations.
+                orientations = self.generate_orientations(objects, anchor_objects, generator)
+                oriented_bounds = rotate_candidate_bboxes(objects, bounds, [orientations])
                 candidates.append(
                     PlacementCandidate(
                         env_id=env_id,
                         candidate_id=candidate_id,
-                        positions=self.generate_positions(objects, anchor_objects, bounds, generator),
-                        orientations=self.generate_orientations(objects, anchor_objects, generator),
-                        bboxes=bounds,
+                        positions=self.generate_positions(objects, anchor_objects, oriented_bounds, generator),
+                        orientations=orientations,
+                        bboxes=oriented_bounds,
                     )
                 )
         batch = PlacementCandidateBatch(candidates)
-        update_candidate_bounds(batch, env_bboxes)
         collision_bboxes = self.get_clutter_collision_bounds(objects, collision_objects)
         for candidate in batch.candidates:
             if generator is not None:
@@ -71,6 +75,27 @@ class PlacementCandidateGenerator:
                 )
             self.initialize_clutter_positions(candidate.positions, candidate.bboxes, collision_bboxes, generator)
         return batch
+
+    @staticmethod
+    def _validate_alignment_headings(
+        objects: list[PlaceableAsset], bounds: dict[PlaceableAsset, AxisAlignedBoundingBox]
+    ) -> None:
+        """Reject horizontal alignment when a later FaceTo turn can move either box centre."""
+        for subject in objects:
+            for relation in subject.get_relations():
+                if not isinstance(relation, AlignWith) or relation.axis.value == "z":
+                    continue
+                for asset in (subject, relation.parent):
+                    if get_relation(asset, FaceTo) is None:
+                        continue
+                    # Include fixed roll/pitch, which can move a centre off the yaw axis.
+                    oriented_bounds = rotate_candidate_bboxes([asset], {asset: bounds[asset]}, [{}])
+                    centre_xy = oriented_bounds[asset].center[:, :2]
+                    assert torch.all(centre_xy.abs() <= 1e-6), (
+                        f"AlignWith on '{subject.name}' cannot use FaceTo on '{asset.name}': "
+                        "its off-centre bounds move when FaceTo applies yaw after solving. "
+                        "Use a fixed RotateAroundSolution heading or centre the asset's placement bounds."
+                    )
 
     def generate_positions(
         self,
@@ -82,7 +107,7 @@ class PlacementCandidateGenerator:
         """Generate initial positions for all objects, using the configured initializer.
 
         Args:
-            env_bboxes: Per-object bboxes for the current env, each with shape (1, 3).
+            env_bboxes: Bounds at the candidate orientations, relative to each origin, shaped (1, 3).
             generator: Optional RNG generator for reproducible sampling. When None,
                 uses PyTorch's global RNG.
 
