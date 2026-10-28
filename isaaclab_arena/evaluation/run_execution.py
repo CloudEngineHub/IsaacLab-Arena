@@ -187,6 +187,7 @@ def build_arena_builder_from_run_cfg(cfg: ArenaRunCfg, rebuild_index: int = 0) -
             environment_builder=cfg.environment_builder,
             hydra_overrides=hydra_overrides,
             rebuild_index=rebuild_index,
+            policy_cfg=cfg.policy,
         )
         if isinstance(cfg.environment, LegacyGraphEnvironmentCfg)
         else _build_arena_builder_from_cfg(cfg, hydra_overrides, rebuild_index)
@@ -206,6 +207,7 @@ def _build_arena_builder_from_cfg(cfg: ArenaRunCfg, hydra_overrides: list[str], 
         cfg.environment_builder,
         hydra_overrides=hydra_overrides,
         rebuild_index=rebuild_index,
+        policy_cfg=cfg.policy,
     )
 
 
