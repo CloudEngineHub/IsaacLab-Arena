@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from enum import Enum
 from typing import TYPE_CHECKING, TypeVar
 
@@ -521,40 +522,33 @@ class AtPosition(UnaryRelation):
 class PositionLimitsBox(UnaryRelation):
     """Constrains an object's position to an axis-aligned box in world coordinates.
 
-    Each axis bound is independently optional (None = unconstrained).
+    Specify each axis as a (minimum, maximum) pair; None leaves that bound
+    unconstrained. Omitted axes are unconstrained.
 
     Usage:
-        mug.add_relation(PositionLimitsBox(x_min=-0.5, x_max=0.5, y_min=-0.5, y_max=0.5))
-        mug.add_relation(PositionLimitsBox(z_min=0.8))  # only constrain Z
+        mug.add_relation(PositionLimitsBox(x_limits=(-0.5, 0.5), y_limits=(-0.5, 0.5)))
+        mug.add_relation(PositionLimitsBox(z_limits=(0.8, None)))  # only constrain Z
     """
 
     name = "position_limits_box"
 
     def __init__(
         self,
-        x_min: float | None = None,
-        x_max: float | None = None,
-        y_min: float | None = None,
-        y_max: float | None = None,
-        z_min: float | None = None,
-        z_max: float | None = None,
+        x_limits: Sequence[float | None] = (None, None),
+        y_limits: Sequence[float | None] = (None, None),
+        z_limits: Sequence[float | None] = (None, None),
         relation_loss_weight: float = 1.0,
     ):
+        for axis, limits in (("x", x_limits), ("y", y_limits), ("z", z_limits)):
+            assert len(limits) == 2, f"{axis}_limits must contain a minimum and maximum"
+            lower, upper = limits
+            assert lower is None or upper is None or lower < upper, f"{axis}_limits minimum must be less than maximum"
         assert any(
-            bound is not None for bound in (x_min, x_max, y_min, y_max, z_min, z_max)
+            bound is not None for bound in (*x_limits, *y_limits, *z_limits)
         ), "At least one axis bound must be specified for PositionLimitsBox"
-        if x_min is not None and x_max is not None:
-            assert x_min < x_max, f"x_min must be less than x_max, got x_min={x_min}, x_max={x_max}"
-        if y_min is not None and y_max is not None:
-            assert y_min < y_max, f"y_min must be less than y_max, got y_min={y_min}, y_max={y_max}"
-        if z_min is not None and z_max is not None:
-            assert z_min < z_max, f"z_min must be less than z_max, got z_min={z_min}, z_max={z_max}"
-        self.x_min = x_min
-        self.x_max = x_max
-        self.y_min = y_min
-        self.y_max = y_max
-        self.z_min = z_min
-        self.z_max = z_max
+        self.x_min, self.x_max = x_limits
+        self.y_min, self.y_max = y_limits
+        self.z_min, self.z_max = z_limits
         self.relation_loss_weight = relation_loss_weight
 
 
