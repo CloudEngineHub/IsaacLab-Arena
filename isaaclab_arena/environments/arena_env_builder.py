@@ -50,6 +50,7 @@ from isaaclab_arena.recording.common_terms import (
 from isaaclab_arena.recording.episode_recorder_manager import EpisodeRecorderTermCfg
 from isaaclab_arena.recording.progress_terms import ProgressEpisodeRecorderTermCfg
 from isaaclab_arena.relations.object_placer_params import ObjectPlacerParams
+from isaaclab_arena.relations.placement_diagnostics import PlacementDiagnostics
 from isaaclab_arena.relations.relation_solver_params import RelationSolverParams
 from isaaclab_arena.relations.runtime.placement_events import PLACEMENT_RESET_EVENT_NAME
 from isaaclab_arena.relations.runtime.placement_sampler import (
@@ -127,6 +128,9 @@ class ArenaEnvBuilder:
         self.interactive_scene_cfg = InteractiveSceneCfg(
             num_envs=cfg.num_envs, env_spacing=cfg.env_spacing, replicate_physics=False
         )
+        # How live relation placement filled its pool in the last build_env_cfg(), or None when that build solved no
+        # relations or failed.
+        self.placement_diagnostics: PlacementDiagnostics | None = None
 
     def _apply_camera_resolution_mode(self) -> None:
         """Resize the embodiment camera rig as selected by ``cfg.camera_resolution_mode``."""
@@ -339,6 +343,8 @@ class ArenaEnvBuilder:
         Returns:
             An (env_cfg, env_kwargs) tuple, with constructor arguments to forward to gym.make.
         """
+        # A failed build reports no placement diagnostics, so they are set only once the build succeeds.
+        self.placement_diagnostics = None
         # Apply Hydra variation overrides. Needs to happen before build-time variations are applied.
         variations = self.get_all_variations()
         if self.hydra_overrides:
@@ -590,6 +596,10 @@ class ArenaEnvBuilder:
             "variation_recorder": variation_recorder,
             "variation_replay_scheduler": variation_replay_scheduler,
         }
+        # Only live placement solves a pool. The sampler is a RecordedPlacementSampler when the build replays recorded
+        # layouts, and None when it solves no relations; neither has diagnostics.
+        if isinstance(placement_sampler, PlacementSampler):
+            self.placement_diagnostics = placement_sampler.placement_pool.last_fill_diagnostics
         return env_cfg, env_kwargs
 
     def get_entry_point(self) -> str | type[ManagerBasedRLMimicEnv]:
