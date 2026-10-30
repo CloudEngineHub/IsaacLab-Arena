@@ -97,5 +97,10 @@ RUN --mount=type=bind,source=docker/setup/configure_shell.sh,target=/tmp/configu
 COPY docs ${WORKDIR}/docs
 COPY docker/setup/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+# Arena git commit and branch, typically set by CI when it builds the image. Local builds should leave them
+# "unknown" since values would turn stale if the mounted checkout changes.
+ARG GIT_SHA=unknown
+ARG GIT_BRANCH=unknown
+ENV ARENA_GIT_SHA=${GIT_SHA} ARENA_GIT_BRANCH=${GIT_BRANCH}
 
 FROM dev AS default
